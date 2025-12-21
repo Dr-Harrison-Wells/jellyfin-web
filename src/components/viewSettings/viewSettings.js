@@ -12,11 +12,21 @@ import '../formdialog.scss';
 import '../../styles/flexstyles.scss';
 import template from './viewSettings.template.html';
 
+/**
+ * 阻止表单提交的默认行为
+ * @param {Event} e - 表单提交事件
+ * @returns {boolean} 返回false阻止提交
+ */
 function onSubmit(e) {
     e.preventDefault();
     return false;
 }
 
+/**
+ * 初始化视图设置编辑器
+ * @param {HTMLElement} context - 编辑器容器元素
+ * @param {Object} settings - 设置对象
+ */
 function initEditor(context, settings) {
     context.querySelector('form').addEventListener('submit', onSubmit);
 
@@ -29,6 +39,12 @@ function initEditor(context, settings) {
     context.querySelector('.selectImageType').value = settings.imageType || 'primary';
 }
 
+/**
+ * 保存视图设置的值
+ * @param {HTMLElement} context - 编辑器容器元素
+ * @param {Object} settings - 设置对象
+ * @param {string} settingsKey - 设置键名前缀
+ */
 function saveValues(context, settings, settingsKey) {
     const elems = context.querySelectorAll('.viewSetting-checkboxContainer');
     for (const elem of elems) {
@@ -38,6 +54,12 @@ function saveValues(context, settings, settingsKey) {
     userSettings.set(settingsKey + '-imageType', context.querySelector('.selectImageType').value);
 }
 
+/**
+ * 设置元素聚焦时的居中对齐
+ * @param {HTMLElement} elem - 需要聚焦的元素
+ * @param {boolean} horiz - 是否水平居中
+ * @param {boolean} on - 是否开启居中功能
+ */
 function centerFocus(elem, horiz, on) {
     import('../../scripts/scrollHelper').then((scrollHelper) => {
         const fn = on ? 'on' : 'off';
@@ -45,6 +67,12 @@ function centerFocus(elem, horiz, on) {
     });
 }
 
+/**
+ * 根据条件显示或隐藏元素
+ * @param {HTMLElement} context - 容器元素
+ * @param {string} selector - CSS选择器
+ * @param {boolean} visible - 是否显示
+ */
 function showIfAllowed(context, selector, visible) {
     const elem = context.querySelector(selector);
 
@@ -55,7 +83,18 @@ function showIfAllowed(context, selector, visible) {
     }
 }
 
+/**
+ * 视图设置对话框类
+ */
 class ViewSettings {
+    /**
+     * 显示视图设置对话框
+     * @param {Object} options - 配置选项
+     * @param {Array} options.visibleSettings - 可见的设置项列表
+     * @param {Object} options.settings - 当前设置值
+     * @param {string} options.settingsKey - 设置键名前缀
+     * @returns {Promise} 对话框关闭时解析的Promise
+     */
     show(options) {
         return new Promise(function (resolve) {
             const dialogOptions = {

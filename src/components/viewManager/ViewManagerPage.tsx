@@ -47,13 +47,21 @@ interface ViewOptions {
     }
 }
 
+/**
+ * 根据应用类型动态导入控制器和视图文件
+ * @param appType - 应用类型（Dashboard、Wizard 或 Stable）
+ * @param controller - 控制器文件路径（相对路径，不含扩展名）
+ * @param view - 视图文件路径（相对路径，HTML 文件）
+ * @returns Promise<[ControllerModule, string]> - 返回控制器模块和本地化后的 HTML 字符串
+ * @description
+ * 根据不同的 appType 去不同目录下查找控制器与视图，
+ * 并对视图 HTML 进行本地化翻译处理。
+ */
 const importController = (
     appType: AppType,
     controller: string,
     view: string
 ) => {
-    // 根据不同的 appType 去不同目录下查找控制器与视图
-    // 返回一个 Promise，resolved 值为 [ControllerFactory, viewHtmlString]
     switch (appType) {
         case AppType.Dashboard:
             return Promise.all([
@@ -77,17 +85,26 @@ const importController = (
     }
 };
 
+/**
+ * 加载视图和控制器
+ * @param appType - 应用类型
+ * @param controller - 控制器路径
+ * @param view - 视图路径
+ * @param viewOptions - 视图配置选项
+ * @returns Promise<void>
+ * @description
+ * 从磁盘/包中动态加载控制器模块和视图 HTML（已本地化），
+ * 将 controllerFactory 与 HTML 字符串传给 viewManager。
+ * 后续由 viewContainer 负责将 HTML 转为 DOM 并插入，
+ * 再由 viewManager 在视图生命周期内调用 controllerFactory（例如导出默认函数）以完成绑定。
+ */
 const loadView = async (
     appType: AppType,
     controller: string,
     view: string,
     viewOptions: ViewOptions
 ) => {
-    // 从磁盘/包中动态加载控制器模块和视图 HTML（已本地化）
     const [ controllerFactory, viewHtml ] = await importController(appType, controller, view);
-
-    // 将 controllerFactory 与 HTML 字符串传给 viewManager。后续由 viewContainer 负责将 HTML 转为 DOM 并插入，
-    // 再由 viewManager 在视图生命周期内调用 controllerFactory（例如导出默认函数）以完成绑定。
     viewManager.loadView({
         ...viewOptions,
         controllerFactory,
@@ -117,6 +134,13 @@ const ViewManagerPage: FunctionComponent<ViewManagerPageProps> = ({
     const navigationType = useNavigationType();
 
     useEffect(() => {
+        /**
+         * 加载页面视图
+         * @description
+         * 根据导航类型（前进或后退）决定是加载新视图还是恢复已缓存的视图。
+         * 如果是浏览器后退操作（Action.Pop），则尝试恢复视图；
+         * 否则正常加载视图。
+         */
         const loadPage = () => {
             const viewOptions = {
                 url: location.pathname + location.search,
