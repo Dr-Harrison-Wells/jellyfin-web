@@ -1,59 +1,64 @@
-/** App feature flags */
+/**
+ * 应用功能特性标志
+ *
+ * 此枚举定义了应用程序可能支持的各种功能特性。
+ * 用于在运行时检测和启用/禁用特定功能。
+ */
 export enum AppFeature {
-    /** The app supports changing the URL hash when the cast menu opens */
+    /** 应用支持在投屏菜单打开时更改 URL 哈希 */
     CastMenuHashChange = 'castmenuhashchange',
-    /** The app supports Chromecast */
+    /** 应用支持 Chromecast 投屏功能 */
     Chromecast = 'chromecast',
-    /** The app supports showing client settings via a menu entry */
+    /** 应用支持通过菜单项显示客户端设置 */
     ClientSettings = 'clientsettings',
-    /** The app supports configuring the display language */
+    /** 应用支持配置显示语言 */
     DisplayLanguage = 'displaylanguage',
-    /** The app supports configuring the display mode (TV, Desktop, etc.) */
+    /** 应用支持配置显示模式（电视、桌面等） */
     DisplayMode = 'displaymode',
-    /** The app supports showing a download management interface via a menu entry */
+    /** 应用支持通过菜单项显示下载管理界面 */
     DownloadManagement = 'downloadmanagement',
-    /** The app can exit via back navigation */
+    /** 应用支持通过返回导航退出 */
     Exit = 'exit',
-    /** The app can be exited via a menu entry */
+    /** 应用支持通过菜单项退出 */
     ExitMenu = 'exitmenu',
-    /** The app can open external URLs */
+    /** 应用支持打开外部 URL 链接 */
     ExternalLinks = 'externallinks',
-    /** The app supports enabling external players */
+    /** 应用支持启用外部播放器 */
     ExternalPlayerIntent = 'externalplayerintent',
-    /** The app supports file downloads */
+    /** 应用支持文件下载功能 */
     FileDownload = 'filedownload',
-    /** The app supports file input elements */
+    /** 应用支持文件输入元素 */
     FileInput = 'fileinput',
-    /** The app supports enabling fullscreen media playback */
+    /** 应用支持启用全屏媒体播放 */
     Fullscreen = 'fullscreenchange',
-    /** The app supports autoplay on the audio element */
+    /** 应用支持音频元素自动播放 */
     HtmlAudioAutoplay = 'htmlaudioautoplay',
-    /** The app supports autoplay on the video element */
+    /** 应用支持视频元素自动播放 */
     HtmlVideoAutoplay = 'htmlvideoautoplay',
-    /** The app supports switching servers */
+    /** 应用支持切换多个服务器 */
     MultiServer = 'multiserver',
-    /** The app supports playback of BluRay folders */
+    /** 应用支持原生播放蓝光文件夹 */
     NativeBluRayPlayback = 'nativeblurayplayback',
-    /** The app supports playback of DVD folders */
+    /** 应用支持原生播放 DVD 文件夹 */
     NativeDvdPlayback = 'nativedvdplayback',
-    /** The app supports playback of ISO files */
+    /** 应用支持原生播放 ISO 镜像文件 */
     NativeIsoPlayback = 'nativeisoplayback',
-    /** The app supports physical volume buttons */
+    /** 应用支持物理音量按钮控制 */
     PhysicalVolumeControl = 'physicalvolumecontrol',
-    /** The app supports playing remote audio */
+    /** 应用支持播放远程音频 */
     RemoteAudio = 'remoteaudio',
-    /** The app supports the remote control (casting) feature */
+    /** 应用支持远程控制（投屏）功能 */
     RemoteControl = 'remotecontrol',
-    /** The app supports playing remote video */
+    /** 应用支持播放远程视频 */
     RemoteVideo = 'remotevideo',
-    /** The app supports displaying a screensaver */
+    /** 应用支持显示屏幕保护程序 */
     Screensaver = 'screensaver',
-    /** The app supports sharing content */
+    /** 应用支持内容分享功能 */
     Sharing = 'sharing',
-    /** The app supports configuring subtitle appearance */
+    /** 应用支持配置字幕外观样式 */
     SubtitleAppearance = 'subtitleappearancesettings',
-    /** The app supports configuring subtitle burn-in */
+    /** 应用支持配置字幕烧录设置 */
     SubtitleBurnIn = 'subtitleburnsettings',
-    /** The app can open URLs in a blank page. */
+    /** 应用支持在新页面中打开 URL */
     TargetBlank = 'targetblank'
 }

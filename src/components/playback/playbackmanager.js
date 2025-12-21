@@ -1,3 +1,20 @@
+/**
+ * @fileoverview Jellyfin 播放管理器
+ *
+ * 核心播放控制模块,负责管理所有媒体播放功能:
+ * - 播放器生命周期管理(初始化、切换、销毁)
+ * - 播放队列管理(添加、删除、移动、排序)
+ * - 媒体流控制(音频轨、字幕轨、码率调整)
+ * - 播放状态同步(进度上报、状态追踪)
+ * - 转码决策(直接播放、直接流、转码)
+ * - 全屏控制、画中画、AirPlay 支持
+ * - 音量控制、播放速率、亮度调整
+ * - 媒体段跳过(片头、片尾、广告)
+ * - 多设备播放支持(本地播放器、远程播放器)
+ *
+ * @module playbackmanager
+ */
+
 import { BaseItemKind } from '@jellyfin/sdk/lib/generated-client/models/base-item-kind.js';
 import { PlaybackErrorCode } from '@jellyfin/sdk/lib/generated-client/models/playback-error-code.js';
 import { getMediaInfoApi } from '@jellyfin/sdk/lib/utils/api/media-info-api';
@@ -31,8 +48,18 @@ import { getMediaError } from 'utils/mediaError';
 import { toApi } from 'utils/jellyfin-apiclient/compat';
 import { bindSkipSegment } from './skipsegment.ts';
 
+/**
+ * 无限制项目数量标记
+ * 当设置为 -1 时,表示不限制查询返回的项目数量
+ */
 const UNLIMITED_ITEMS = -1;
 
+/**
+ * 判断是否启用本地播放列表管理
+ *
+ * @param {Object} player - 播放器实例
+ * @returns {boolean} 如果播放器自己实现了播放列表管理则返回 false,本地播放器返回 true
+ */
 function enableLocalPlaylistManagement(player) {
     if (player.getPlaylist) {
         return false;
@@ -41,10 +68,24 @@ function enableLocalPlaylistManagement(player) {
     return player.isLocalPlayer;
 }
 
+/**
+ * 检查播放器是否支持物理音量控制
+ *
+ * @param {Object} player - 播放器实例
+ * @returns {boolean} 本地播放器且设备支持物理音量控制时返回 true
+ */
 function supportsPhysicalVolumeControl(player) {
     return player.isLocalPlayer && appHost.supports(AppFeature.PhysicalVolumeControl);
 }
 
+/**
+ * 绑定全屏状态变化事件
+ *
+ * 监听浏览器的全屏状态变化,并触发播放器的 fullscreenchange 事件
+ * 兼容标准 Screenfull API 和 iOS Safari 的 webkit 全屏 API
+ *
+ * @param {Object} player - 播放器实例
+ */
 function bindToFullscreenChange(player) {
     if (Screenfull.isEnabled) {
         Screenfull.on('change', function () {
@@ -58,6 +99,15 @@ function bindToFullscreenChange(player) {
     }
 }
 
+/**
+ * 触发播放器切换事件
+ *
+ * @param {PlaybackManager} playbackManagerInstance - 播放管理器实例
+ * @param {Object} newPlayer - 新播放器实例
+ * @param {Object} newTarget - 新目标设备信息
+ * @param {Object} previousPlayer - 之前的播放器实例
+ * @param {Object} previousTargetInfo - 之前的目标设备信息
+ */
 function triggerPlayerChange(playbackManagerInstance, newPlayer, newTarget, previousPlayer, previousTargetInfo) {
     if (!newPlayer && !previousPlayer) {
         return;
@@ -70,6 +120,17 @@ function triggerPlayerChange(playbackManagerInstance, newPlayer, newTarget, prev
     Events.trigger(playbackManagerInstance, 'playerchange', [newPlayer, newTarget, previousPlayer]);
 }
 
+/**
+ * 向服务器报告播放状态
+ *
+ * @param {PlaybackManager} playbackManagerInstance - 播放管理器实例
+ * @param {Object} state - 播放状态对象
+ * @param {Object} player - 播放器实例
+ * @param {boolean} reportPlaylist - 是否上报播放列表信息
+ * @param {string} serverId - 服务器 ID
+ * @param {string} method - API 方法名(reportPlaybackStart/reportPlaybackProgress/reportPlaybackStopped)
+ * @param {string} progressEventName - 进度事件名称
+ */
 function reportPlayback(playbackManagerInstance, state, player, reportPlaylist, serverId, method, progressEventName) {
     if (!serverId) {
         // Not a server item
@@ -97,6 +158,13 @@ function reportPlayback(playbackManagerInstance, state, player, reportPlaylist, 
     });
 }
 
+/**
+ * 同步获取播放列表
+ *
+ * @param {PlaybackManager} playbackManagerInstance - 播放管理器实例
+ * @param {Object} player - 播放器实例
+ * @returns {Array} 播放列表项数组
+ */
 function getPlaylistSync(playbackManagerInstance, player) {
     player = player || playbackManagerInstance._currentPlayer;
     if (player && !enableLocalPlaylistManagement(player)) {
@@ -106,6 +174,14 @@ function getPlaylistSync(playbackManagerInstance, player) {
     return playbackManagerInstance._playQueueManager.getPlaylist();
 }
 
+/**
+ * 将播放列表信息添加到播放报告中
+ *
+ * @param {PlaybackManager} playbackManagerInstance - 播放管理器实例
+ * @param {Object} info - 播放报告信息对象
+ * @param {Object} player - 播放器实例
+ * @param {string} serverId - 服务器 ID
+ */
 function addPlaylistToPlaybackReport(playbackManagerInstance, info, player, serverId) {
     info.NowPlayingQueue = getPlaylistSync(playbackManagerInstance, player).map(function (i) {
         const itemInfo = {
@@ -121,10 +197,23 @@ function addPlaylistToPlaybackReport(playbackManagerInstance, info, player, serv
     });
 }
 
+/**
+ * 标准化名称(转小写并移除空格)
+ *
+ * @param {string} t - 待标准化的文本
+ * @returns {string} 标准化后的名称
+ */
 function normalizeName(t) {
     return t.toLowerCase().replace(' ', '');
 }
 
+/**
+ * 获取用于播放的媒体项目列表
+ *
+ * @param {string} serverId - 服务器 ID
+ * @param {Object} query - 查询参数对象
+ * @returns {Promise} 返回包含媒体项目的 Promise
+ */
 function getItemsForPlayback(serverId, query) {
     const apiClient = ServerConnections.getApiClient(serverId);
 
@@ -152,6 +241,12 @@ function getItemsForPlayback(serverId, query) {
     }
 }
 
+/**
+ * 从 URL 项目创建流信息对象
+ *
+ * @param {Object} item - 媒体项目对象
+ * @returns {Object} 流信息对象,包含 URL、播放方法等
+ */
 function createStreamInfoFromUrlItem(item) {
     // Check item.Path for games
     return {
@@ -163,6 +258,13 @@ function createStreamInfoFromUrlItem(item) {
     };
 }
 
+/**
+ * 合并播放查询参数
+ *
+ * @param {Object} obj1 - 第一个查询对象
+ * @param {Object} obj2 - 第二个查询对象
+ * @returns {Object} 合并后的查询对象
+ */
 function mergePlaybackQueries(obj1, obj2) {
     const query = merge({}, obj1, obj2);
 
@@ -174,6 +276,13 @@ function mergePlaybackQueries(obj1, obj2) {
     return query;
 }
 
+/**
+ * 根据媒体类型和容器格式获取 MIME 类型
+ *
+ * @param {string} type - 媒体类型(audio/video)
+ * @param {string} container - 容器格式(如 opus, webma, mkv, mp4 等)
+ * @returns {string} MIME 类型字符串
+ */
 function getMimeType(type, container) {
     container = (container || '').toLowerCase();
 
@@ -222,10 +331,23 @@ function getParam(name, url) {
     }
 }
 
+/**
+ * 判断是否为自动播放器(本地播放器)
+ *
+ * @param {Object} player - 播放器实例
+ * @returns {boolean} 是否为本地播放器
+ */
 function isAutomaticPlayer(player) {
     return player.isLocalPlayer;
 }
 
+/**
+ * 获取自动播放器列表
+ *
+ * @param {PlaybackManager} instance - 播放管理器实例
+ * @param {boolean} forceLocalPlayer - 是否强制使用本地播放器
+ * @returns {Array} 播放器数组
+ */
 function getAutomaticPlayers(instance, forceLocalPlayer) {
     if (!forceLocalPlayer) {
         const player = instance._currentPlayer;
@@ -237,10 +359,22 @@ function getAutomaticPlayers(instance, forceLocalPlayer) {
     return instance.getPlayers().filter(isAutomaticPlayer);
 }
 
+/**
+ * 判断是否为服务器项目(通过检查是否有 ID)
+ *
+ * @param {Object} item - 媒体项目对象
+ * @returns {boolean} 是否为服务器项目
+ */
 function isServerItem(item) {
     return !!item.Id;
 }
 
+/**
+ * 判断是否启用片头播放
+ *
+ * @param {Object} item - 媒体项目对象
+ * @returns {boolean} 是否应该播放片头
+ */
 function enableIntros(item) {
     if (item.MediaType !== 'Video') {
         return false;
@@ -256,6 +390,14 @@ function enableIntros(item) {
     return isServerItem(item);
 }
 
+/**
+ * 获取媒体项目的片头列表
+ *
+ * @param {Object} firstItem - 第一个媒体项目
+ * @param {Object} apiClient - API 客户端实例
+ * @param {Object} options - 播放选项
+ * @returns {Promise} 返回片头列表的 Promise
+ */
 function getIntros(firstItem, apiClient, options) {
     if (options.startPositionTicks || options.startIndex || options.fullscreen === false || !enableIntros(firstItem) || !userSettings.enableCinemaMode()) {
         return Promise.resolve({
@@ -272,6 +414,12 @@ function getIntros(firstItem, apiClient, options) {
     });
 }
 
+/**
+ * 从设备配置文件中提取音频的最大值限制
+ *
+ * @param {Object} deviceProfile - 设备配置文件
+ * @returns {Object} 包含 maxAudioSampleRate、maxAudioBitDepth、maxAudioBitrate 的对象
+ */
 function getAudioMaxValues(deviceProfile) {
     // TODO - this could vary per codec and should be done on the server using the entire profile
     let maxAudioSampleRate = null;
@@ -299,7 +447,20 @@ function getAudioMaxValues(deviceProfile) {
     };
 }
 
+/** 播放会话起始时间戳,用于生成唯一的播放会话 ID */
 let startingPlaySession = new Date().getTime();
+
+/**
+ * 获取音频流 URL
+ *
+ * @param {Object} item - 媒体项目对象
+ * @param {Object} transcodingProfile - 转码配置
+ * @param {string} directPlayContainers - 支持直接播放的容器格式
+ * @param {Object} apiClient - API 客户端实例
+ * @param {number} startPosition - 起始位置(ticks)
+ * @param {Object} maxValues - 最大值限制对象
+ * @returns {string} 音频流 URL
+ */
 function getAudioStreamUrl(item, transcodingProfile, directPlayContainers, apiClient, startPosition, maxValues) {
     const url = 'Audio/' + item.Id + '/universal';
 
@@ -323,6 +484,16 @@ function getAudioStreamUrl(item, transcodingProfile, directPlayContainers, apiCl
     });
 }
 
+/**
+ * 根据设备配置文件获取音频流 URL
+ *
+ * @param {Object} item - 媒体项目对象
+ * @param {Object} deviceProfile - 设备配置文件
+ * @param {number} maxBitrate - 最大码率
+ * @param {Object} apiClient - API 客户端实例
+ * @param {number} startPosition - 起始位置(ticks)
+ * @returns {string} 音频流 URL
+ */
 function getAudioStreamUrlFromDeviceProfile(item, deviceProfile, maxBitrate, apiClient, startPosition) {
     const transcodingProfile = deviceProfile.TranscodingProfiles.filter(function (p) {
         return p.Type === 'Audio' && p.Context === 'Streaming';
@@ -349,6 +520,16 @@ function getAudioStreamUrlFromDeviceProfile(item, deviceProfile, maxBitrate, api
     return getAudioStreamUrl(item, transcodingProfile, directPlayContainers, apiClient, startPosition, { maxBitrate, ...maxValues });
 }
 
+/**
+ * 获取多个项目的流 URL 列表
+ *
+ * @param {Array} items - 媒体项目数组
+ * @param {Object} deviceProfile - 设备配置文件
+ * @param {number} maxBitrate - 最大码率
+ * @param {Object} apiClient - API 客户端实例
+ * @param {number} startPosition - 起始位置(ticks)
+ * @returns {Promise<Array>} 流 URL 数组的 Promise
+ */
 function getStreamUrls(items, deviceProfile, maxBitrate, apiClient, startPosition) {
     const audioTranscodingProfile = deviceProfile.TranscodingProfiles.filter(function (p) {
         return p.Type === 'Audio' && p.Context === 'Streaming';
@@ -392,6 +573,18 @@ function getStreamUrls(items, deviceProfile, maxBitrate, apiClient, startPositio
     return Promise.resolve(streamUrls);
 }
 
+/**
+ * 设置流URL到项目
+ *
+ * 为每个项目预设媒体源和流URL
+ *
+ * @param {Array} items - 项目数组
+ * @param {Object} deviceProfile - 设备配置
+ * @param {number} maxBitrate - 最大码率
+ * @param {Object} apiClient - API客户端
+ * @param {number} startPosition - 起始位置
+ * @returns {Promise} Promise
+ */
 function setStreamUrls(items, deviceProfile, maxBitrate, apiClient, startPosition) {
     return getStreamUrls(items, deviceProfile, maxBitrate, apiClient, startPosition).then(function (streamUrls) {
         for (let i = 0, length = items.length; i < length; i++) {
@@ -410,6 +603,24 @@ function setStreamUrls(items, deviceProfile, maxBitrate, apiClient, startPositio
     });
 }
 
+/**
+ * 获取播放信息
+ *
+ * 从服务器获取播放信息,包括:
+ * - 媒体源信息
+ * - 流URL
+ * - 转码参数
+ * - 直播流ID
+ *
+ * @param {Object} player - 播放器实例
+ * @param {Object} apiClient - API客户端
+ * @param {Object} item - 媒体项目
+ * @param {Object} deviceProfile - 设备配置
+ * @param {string} mediaSourceId - 媒体源ID
+ * @param {string} liveStreamId - 直播流ID
+ * @param {Object} options - 选项对象
+ * @returns {Promise<Object>} 播放信息Promise
+ */
 async function getPlaybackInfo(player, apiClient, item, deviceProfile, mediaSourceId, liveStreamId, options) {
     if (!itemHelper.isLocalItem(item) && item.MediaType === 'Audio' && !player.useServerPlaybackInfoForAudio) {
         return {
@@ -500,6 +711,20 @@ async function getPlaybackInfo(player, apiClient, item, deviceProfile, mediaSour
     return res.data;
 }
 
+/**
+ * 获取最优媒体源
+ *
+ * 从多个媒体源版本中选择最优的:
+ * 1. 优先支持直接播放的
+ * 2. 其次支持直接串流的
+ * 3. 最后支持转码的
+ * 4. 都不支持则返回第一个
+ *
+ * @param {Object} apiClient - API客户端
+ * @param {Object} item - 媒体项目
+ * @param {Array} versions - 媒体源版本数组
+ * @returns {Promise<Object>} 最优媒体源Promise
+ */
 function getOptimalMediaSource(apiClient, item, versions) {
     const promises = versions.map(function (v) {
         return supportsDirectPlay(apiClient, item, v);
@@ -531,6 +756,20 @@ function getOptimalMediaSource(apiClient, item, versions) {
     });
 }
 
+/**
+ * 获取直播流
+ *
+ * 打开一个新的直播流会话(用于直播电视、转码流等)
+ *
+ * @param {Object} player - 播放器实例
+ * @param {Object} apiClient - API客户端
+ * @param {Object} item - 媒体项目
+ * @param {string} playSessionId - 播放会话ID
+ * @param {Object} deviceProfile - 设备配置
+ * @param {Object} mediaSource - 媒体源对象
+ * @param {Object} options - 选项对象
+ * @returns {Promise} 直播流Promise
+ */
 function getLiveStream(player, apiClient, item, playSessionId, deviceProfile, mediaSource, options) {
     const postData = {
         DeviceProfile: deviceProfile,
@@ -571,6 +810,18 @@ function getLiveStream(player, apiClient, item, playSessionId, deviceProfile, me
     });
 }
 
+/**
+ * 检查主机是否可达
+ *
+ * 判断媒体源的主机是否可以访问:
+ * - 远程源总是可达
+ * - 本地网络内可达
+ * - localhost/127.0.0.1只在同一机器上可达
+ *
+ * @param {Object} mediaSource - 媒体源对象
+ * @param {Object} apiClient - API客户端
+ * @returns {Promise<boolean>} 是否可达的Promise
+ */
 function isHostReachable(mediaSource, apiClient) {
     if (mediaSource.IsRemote) {
         return Promise.resolve(true);
@@ -594,6 +845,20 @@ function isHostReachable(mediaSource, apiClient) {
     });
 }
 
+/**
+ * 检查是否支持直接播放
+ *
+ * 判断媒体源是否可以直接播放(不需要转码):
+ * - 检查媒体源标志
+ * - 检查文件夹翻录(蓝光/DVD)
+ * - 检查远程视频支持
+ * - 检查HTTP协议和主机可达性
+ *
+ * @param {Object} apiClient - API客户端
+ * @param {Object} item - 媒体项目
+ * @param {Object} mediaSource - 媒体源对象
+ * @returns {Promise<boolean>} 是否支持直接播放的Promise
+ */
 function supportsDirectPlay(apiClient, item, mediaSource) {
     // folder rip hacks due to not yet being supported by the stream building engine
     const isFolderRip = mediaSource.VideoType === 'BluRay' || mediaSource.VideoType === 'Dvd' || mediaSource.VideoType === 'HdDvd';
@@ -617,9 +882,13 @@ function supportsDirectPlay(apiClient, item, mediaSource) {
 }
 
 /**
- * @param {PlaybackManager} instance
- * @param {import('@jellyfin/sdk/lib/generated-client/index.js').PlaybackInfoResponse} result
- * @returns {boolean}
+ * 验证播放信息结果
+ *
+ * 检查播放信息是否包含错误,如果有则显示错误消息
+ *
+ * @param {PlaybackManager} instance - PlaybackManager实例
+ * @param {import('@jellyfin/sdk/lib/generated-client/index.js').PlaybackInfoResponse} result - 播放信息响应
+ * @returns {boolean} 是否有效(无错误)
  */
 function validatePlaybackInfoResult(instance, result) {
     if (result.ErrorCode) {
@@ -634,6 +903,14 @@ function validatePlaybackInfoResult(instance, result) {
     return true;
 }
 
+/**
+ * 显示播放信息错误消息
+ *
+ * 以对话框形式显示本地化的错误消息
+ *
+ * @param {PlaybackManager} instance - PlaybackManager实例
+ * @param {string} errorCode - 错误代码
+ */
 function showPlaybackInfoErrorMessage(instance, errorCode) {
     alert({
         text: globalize.translate(errorCode),
@@ -641,10 +918,25 @@ function showPlaybackInfoErrorMessage(instance, errorCode) {
     });
 }
 
+/**
+ * 规范化播放选项
+ *
+ * 设置播放选项的默认值(fullscreen默认为true)
+ *
+ * @param {Object} playOptions - 播放选项对象
+ */
 function normalizePlayOptions(playOptions) {
     playOptions.fullscreen = playOptions.fullscreen !== false;
 }
 
+/**
+ * 截断播放选项
+ *
+ * 只保留必要的播放选项字段,用于传递给下一个播放项
+ *
+ * @param {Object} playOptions - 完整的播放选项
+ * @returns {Object} 精简的播放选项
+ */
 function truncatePlayOptions(playOptions) {
     return {
         fullscreen: playOptions.fullscreen,
@@ -655,6 +947,16 @@ function truncatePlayOptions(playOptions) {
     };
 }
 
+/**
+ * 获取用于上报的正在播放项目
+ *
+ * 创建项目副本并更新运行时长和媒体流信息
+ *
+ * @param {Object} player - 播放器实例
+ * @param {Object} item - 媒体项目
+ * @param {Object} mediaSource - 媒体源对象
+ * @returns {Object} 用于上报的项目对象
+ */
 function getNowPlayingItemForReporting(player, item, mediaSource) {
     const nowPlayingItem = Object.assign({}, item);
 
@@ -671,10 +973,27 @@ function getNowPlayingItemForReporting(player, item, mediaSource) {
     return nowPlayingItem;
 }
 
+/**
+ * 判断播放器是否单独显示
+ *
+ * 非本地播放器(如远程播放器)需要单独显示
+ *
+ * @param {Object} player - 播放器实例
+ * @returns {boolean} 是否单独显示
+ */
 function displayPlayerIndividually(player) {
     return !player.isLocalPlayer;
 }
 
+/**
+ * 创建播放器目标对象
+ *
+ * 将播放器信息转换为目标对象格式
+ *
+ * @param {PlaybackManager} instance - PlaybackManager实例
+ * @param {Object} player - 播放器实例
+ * @returns {Object} 目标对象
+ */
 function createTarget(instance, player) {
     return {
         name: player.name,
@@ -686,6 +1005,14 @@ function createTarget(instance, player) {
     };
 }
 
+/**
+ * 获取播放器目标列表
+ *
+ * 如果播放器有getTargets方法则调用,否则创建默认目标
+ *
+ * @param {Object} player - 播放器实例
+ * @returns {Promise<Array>} 目标列表Promise
+ */
 function getPlayerTargets(player) {
     if (player.getTargets) {
         return player.getTargets();
@@ -694,6 +1021,15 @@ function getPlayerTargets(player) {
     return Promise.resolve([createTarget(player)]);
 }
 
+/**
+ * 排序播放器目标
+ *
+ * 按照本地播放器优先,然后按名称排序
+ *
+ * @param {Object} a - 目标A
+ * @param {Object} b - 目标B
+ * @returns {number} 比较结果
+ */
 function sortPlayerTargets(a, b) {
     let aVal = a.isLocalPlayer ? 0 : 1;
     let bVal = b.isLocalPlayer ? 0 : 1;
@@ -717,6 +1053,12 @@ export class PlaybackManager {
 
         this._playQueueManager = new PlayQueueManager();
 
+        /**
+         * 获取当前播放的媒体项目
+         *
+         * @param {Object} player - 播放器实例
+         * @returns {Object|null} 当前播放的项目对象
+         */
         self.currentItem = function (player) {
             if (!player) {
                 throw new Error('player cannot be null');
@@ -730,6 +1072,12 @@ export class PlaybackManager {
             return data.streamInfo ? data.streamInfo.item : null;
         };
 
+        /**
+         * 获取当前媒体源
+         *
+         * @param {Object} player - 播放器实例
+         * @returns {Object|null} 当前媒体源对象
+         */
         self.currentMediaSource = function (player) {
             if (!player) {
                 throw new Error('player cannot be null');
@@ -743,6 +1091,12 @@ export class PlaybackManager {
             return data.streamInfo ? data.streamInfo.mediaSource : null;
         };
 
+        /**
+         * 获取播放方法(DirectPlay/DirectStream/Transcode)
+         *
+         * @param {Object} player - 播放器实例
+         * @returns {string|null} 播放方法
+         */
         self.playMethod = function (player) {
             if (!player) {
                 throw new Error('player cannot be null');
@@ -756,6 +1110,12 @@ export class PlaybackManager {
             return data.streamInfo ? data.streamInfo.playMethod : null;
         };
 
+        /**
+         * 获取播放会话 ID
+         *
+         * @param {Object} player - 播放器实例
+         * @returns {string|null} 播放会话 ID
+         */
         self.playSessionId = function (player) {
             if (!player) {
                 throw new Error('player cannot be null');
@@ -769,6 +1129,11 @@ export class PlaybackManager {
             return data.streamInfo ? data.streamInfo.playSessionId : null;
         };
 
+        /**
+         * 获取当前播放器信息
+         *
+         * @returns {Object|null} 播放器信息对象(包含名称、是否本地、设备信息等)
+         */
         self.getPlayerInfo = function () {
             const player = self._currentPlayer;
 
@@ -788,6 +1153,12 @@ export class PlaybackManager {
             };
         };
 
+        /**
+         * 设置活动播放器
+         *
+         * @param {Object|string} player - 播放器实例或播放器名称
+         * @param {Object} targetInfo - 目标设备信息
+         */
         self.setActivePlayer = function (player, targetInfo) {
             if (player === 'localplayer' || player.name === 'localplayer') {
                 if (self._currentPlayer?.isLocalPlayer) {
@@ -810,6 +1181,12 @@ export class PlaybackManager {
             setCurrentPlayerInternal(player, targetInfo);
         };
 
+        /**
+         * 尝试设置活动播放器(带配对流程)
+         *
+         * @param {Object|string} player - 播放器实例或播放器名称
+         * @param {Object} targetInfo - 目标设备信息
+         */
         self.trySetActivePlayer = function (player, targetInfo) {
             if (player === 'localplayer' || player.name === 'localplayer') {
                 if (self._currentPlayer?.isLocalPlayer) {
@@ -858,15 +1235,30 @@ export class PlaybackManager {
                 .then(responses => responses.flat().sort(sortPlayerTargets));
         };
 
+        /**
+         * 检查播放器是否支持第二字幕
+         *
+         * @param {Object} player - 播放器实例
+         * @returns {boolean} 是否支持第二字幕
+         */
         self.playerHasSecondarySubtitleSupport = function (player = self._currentPlayer) {
             if (!player) return false;
             return Boolean(player.supports('SecondarySubtitles'));
         };
 
         /**
-         * Checks if:
-         * - the track can be used directly as a secondary subtitle
-         * - or if it can be paired with a secondary subtitle when used as a primary subtitle
+         * 检查字幕轨道是否支持作为第二字幕
+         *
+         * 检查条件:
+         * - 可以直接用作第二字幕
+         * - 或者作为主字幕时可以与第二字幕配对
+         *
+         * 注意: 目前仅支持非 SSA/ASS 格式的外部字幕,
+         * 因为 SSA/ASS 渲染复杂且有字幕重叠风险
+         *
+         * @param {Object} track - 字幕轨道对象
+         * @param {Object} player - 播放器实例
+         * @returns {boolean} 是否支持第二字幕
          */
         self.trackHasSecondarySubtitleSupport = function (track, player = self._currentPlayer) {
             if (!player || !track) return false;
@@ -877,11 +1269,26 @@ export class PlaybackManager {
             return format !== 'ssa' && format !== 'ass' && getDeliveryMethod(track) === 'External';
         };
 
+        /**
+         * 获取支持作为第二字幕的字幕轨道列表
+         *
+         * 过滤出所有支持第二字幕功能的字幕轨道
+         *
+         * @param {Object} player - 播放器实例
+         * @returns {Array} 支持第二字幕的字幕轨道数组
+         */
         self.secondarySubtitleTracks = function (player = self._currentPlayer) {
             const streams = self.subtitleTracks(player);
             return streams.filter((stream) => self.trackHasSecondarySubtitleSupport(stream, player));
         };
 
+        /**
+         * 获取当前字幕流
+         *
+         * @param {Object} player - 播放器实例
+         * @param {boolean} isSecondaryStream - 是否获取第二字幕流
+         * @returns {Object|null} 字幕流对象,未启用时返回 null
+         */
         function getCurrentSubtitleStream(player, isSecondaryStream = false) {
             if (!player) {
                 throw new Error('player cannot be null');
@@ -896,12 +1303,28 @@ export class PlaybackManager {
             return self.getSubtitleStream(player, index);
         }
 
+        /**
+         * 根据索引获取字幕流
+         *
+         * @param {Object} player - 播放器实例
+         * @param {number} index - 字幕流索引
+         * @returns {Object|undefined} 字幕流对象
+         */
         self.getSubtitleStream = function (player, index) {
             return self.subtitleTracks(player).filter(function (s) {
                 return s.Type === 'Subtitle' && s.Index === index;
             })[0];
         };
 
+        /**
+         * 获取播放列表
+         *
+         * 如果播放器支持本地播放列表管理,使用播放队列管理器;
+         * 否则委托给播放器自身的播放列表管理
+         *
+         * @param {Object} player - 播放器实例
+         * @returns {Promise<Array>} 播放列表 Promise
+         */
         self.getPlaylist = function (player) {
             player = player || self._currentPlayer;
             if (player && !enableLocalPlaylistManagement(player)) {
@@ -915,6 +1338,14 @@ export class PlaybackManager {
             return Promise.resolve(self._playQueueManager.getPlaylist());
         };
 
+        /**
+         * 提示跳过媒体片段
+         *
+         * 用于提示用户跳过特定媒体片段(如片头、片尾、广告等)
+         *
+         * @param {Object} mediaSegment - 媒体片段对象
+         * @param {Object} player - 播放器实例
+         */
         self.promptToSkip = function (mediaSegment, player) {
             player = player || self._currentPlayer;
 
@@ -923,6 +1354,13 @@ export class PlaybackManager {
             }
         };
 
+        /**
+         * 移除当前播放器
+         *
+         * 如果传入的播放器是当前播放器,则将其设置为 null
+         *
+         * @param {Object} player - 要移除的播放器实例
+         */
         function removeCurrentPlayer(player) {
             const previousPlayer = self._currentPlayer;
 
@@ -931,6 +1369,18 @@ export class PlaybackManager {
             }
         }
 
+        /**
+         * 内部设置当前播放器
+         *
+         * 处理播放器切换逻辑:
+         * - 为本地播放器创建目标信息
+         * - 停止前一个播放器的更新
+         * - 启动新播放器的更新
+         * - 触发播放器切换事件
+         *
+         * @param {Object|null} player - 新播放器实例
+         * @param {Object} targetInfo - 目标设备信息
+         */
         function setCurrentPlayerInternal(player, targetInfo) {
             const previousPlayer = self._currentPlayer;
             const previousTargetInfo = currentTargetInfo;
@@ -962,6 +1412,12 @@ export class PlaybackManager {
             triggerPlayerChange(self, player, targetInfo, previousPlayer, previousTargetInfo);
         }
 
+        /**
+         * 检查播放器是否正在播放
+         *
+         * @param {Object} player - 播放器实例
+         * @returns {boolean} 是否正在播放
+         */
         self.isPlaying = function (player) {
             player = player || self._currentPlayer;
 
@@ -972,6 +1428,13 @@ export class PlaybackManager {
             return player?.currentSrc() != null;
         };
 
+        /**
+         * 检查是否正在播放指定媒体类型
+         *
+         * @param {string} mediaType - 媒体类型(Video/Audio 等)
+         * @param {Object} player - 播放器实例
+         * @returns {boolean} 是否正在播放该类型
+         */
         self.isPlayingMediaType = function (mediaType, player) {
             player = player || self._currentPlayer;
 
@@ -988,6 +1451,13 @@ export class PlaybackManager {
             return false;
         };
 
+        /**
+         * 检查是否在本地播放指定媒体类型
+         *
+         * @param {Array<string>} mediaTypes - 媒体类型数组
+         * @param {Object} player - 播放器实例
+         * @returns {boolean} 是否在本地播放任一指定类型
+         */
         self.isPlayingLocally = function (mediaTypes, player) {
             player = player || self._currentPlayer;
 
@@ -1000,24 +1470,58 @@ export class PlaybackManager {
             }).length > 0;
         };
 
+        /**
+         * 检查是否正在播放视频
+         *
+         * @param {Object} player - 播放器实例
+         * @returns {boolean} 是否正在播放视频
+         */
         self.isPlayingVideo = function (player) {
             return self.isPlayingMediaType('Video', player);
         };
 
+        /**
+         * 检查是否正在播放音频
+         *
+         * @param {Object} player - 播放器实例
+         * @returns {boolean} 是否正在播放音频
+         */
         self.isPlayingAudio = function (player) {
             return self.isPlayingMediaType('Audio', player);
         };
 
+        /**
+         * 获取所有已注册的播放器
+         *
+         * @returns {Array} 播放器数组
+         */
         self.getPlayers = function () {
             return players;
         };
 
+        /**
+         * 获取默认播放选项
+         *
+         * @returns {Object} 默认播放选项(fullscreen: true)
+         */
         function getDefaultPlayOptions() {
             return {
                 fullscreen: true
             };
         }
 
+        /**
+         * 检查媒体项目是否可播放
+         *
+         * 判断逻辑:
+         * - 集合类型(相册、播放列表、系列等)可播放
+         * - 虚拟位置的项目(除节目外)不可播放
+         * - 节目需在播出时间内
+         * - 其他项目需找到可用的播放器
+         *
+         * @param {Object} item - 媒体项目
+         * @returns {boolean} 是否可播放
+         */
         self.canPlay = function (item) {
             const itemType = item.Type;
 
@@ -1042,6 +1546,13 @@ export class PlaybackManager {
             return getPlayer(item, getDefaultPlayOptions()) != null;
         };
 
+        /**
+         * 切换宽高比
+         *
+         * 循环切换所有支持的宽高比选项,到达末尾时返回第一个
+         *
+         * @param {Object} player - 播放器实例
+         */
         self.toggleAspectRatio = function (player) {
             player = player || self._currentPlayer;
 
@@ -1067,6 +1578,12 @@ export class PlaybackManager {
             }
         };
 
+        /**
+         * 设置宽高比
+         *
+         * @param {string} val - 宽高比值
+         * @param {Object} player - 播放器实例
+         */
         self.setAspectRatio = function (val, player) {
             player = player || self._currentPlayer;
 
@@ -1075,6 +1592,12 @@ export class PlaybackManager {
             }
         };
 
+        /**
+         * 获取支持的宽高比列表
+         *
+         * @param {Object} player - 播放器实例
+         * @returns {Array} 支持的宽高比数组
+         */
         self.getSupportedAspectRatios = function (player) {
             player = player || self._currentPlayer;
 
@@ -1085,6 +1608,12 @@ export class PlaybackManager {
             return [];
         };
 
+        /**
+         * 获取当前宽高比
+         *
+         * @param {Object} player - 播放器实例
+         * @returns {string|undefined} 当前宽高比值
+         */
         self.getAspectRatio = function (player) {
             player = player || self._currentPlayer;
 
@@ -1093,6 +1622,13 @@ export class PlaybackManager {
             }
         };
 
+        /**
+         * 提高播放速率
+         *
+         * 在支持的播放速率列表中选择下一个更高的速率
+         *
+         * @param {Object} player - 播放器实例
+         */
         self.increasePlaybackRate = function (player) {
             player = player || self._currentPlayer;
             if (player) {
@@ -1112,6 +1648,13 @@ export class PlaybackManager {
             }
         };
 
+        /**
+         * 降低播放速率
+         *
+         * 在支持的播放速率列表中选择上一个更低的速率
+         *
+         * @param {Object} player - 播放器实例
+         */
         self.decreasePlaybackRate = function (player) {
             player = player || self._currentPlayer;
             if (player) {
@@ -1131,6 +1674,12 @@ export class PlaybackManager {
             }
         };
 
+        /**
+         * 获取支持的播放速率列表
+         *
+         * @param {Object} player - 播放器实例
+         * @returns {Array} 支持的播放速率数组
+         */
         self.getSupportedPlaybackRates = function (player) {
             player = player || self._currentPlayer;
             if (player?.getSupportedPlaybackRates) {
@@ -1140,6 +1689,14 @@ export class PlaybackManager {
         };
 
         let brightnessOsdLoaded;
+        /**
+         * 设置屏幕亮度
+         *
+         * 首次调用时会动态加载亮度 OSD 模块
+         *
+         * @param {number} val - 亮度值
+         * @param {Object} player - 播放器实例
+         */
         self.setBrightness = function (val, player) {
             player = player || self._currentPlayer;
 
@@ -1153,6 +1710,12 @@ export class PlaybackManager {
             }
         };
 
+        /**
+         * 获取屏幕亮度
+         *
+         * @param {Object} player - 播放器实例
+         * @returns {number|undefined} 亮度值
+         */
         self.getBrightness = function (player) {
             player = player || self._currentPlayer;
 
@@ -1161,6 +1724,12 @@ export class PlaybackManager {
             }
         };
 
+        /**
+         * 设置音量
+         *
+         * @param {number} val - 音量值(0-100)
+         * @param {Object} player - 播放器实例
+         */
         self.setVolume = function (val, player) {
             player = player || self._currentPlayer;
 
@@ -1169,6 +1738,12 @@ export class PlaybackManager {
             }
         };
 
+        /**
+         * 获取音量
+         *
+         * @param {Object} player - 播放器实例
+         * @returns {number} 音量值(0-100),物理音量控制时返回 1
+         */
         self.getVolume = function (player) {
             player = player || self._currentPlayer;
 
@@ -1179,6 +1754,11 @@ export class PlaybackManager {
             return 1;
         };
 
+        /**
+         * 增加音量
+         *
+         * @param {Object} player - 播放器实例
+         */
         self.volumeUp = function (player) {
             player = player || self._currentPlayer;
 
@@ -1187,6 +1767,11 @@ export class PlaybackManager {
             }
         };
 
+        /**
+         * 降低音量
+         *
+         * @param {Object} player - 播放器实例
+         */
         self.volumeDown = function (player) {
             player = player || self._currentPlayer;
 
@@ -1195,6 +1780,13 @@ export class PlaybackManager {
             }
         };
 
+        /**
+         * 切换到下一个音频轨道
+         *
+         * 循环切换所有可用的音频流,到达末尾时返回第一个
+         *
+         * @param {Object} player - 播放器实例
+         */
         self.changeAudioStream = function (player) {
             player = player || self._currentPlayer;
             if (player && !enableLocalPlaylistManagement(player)) {
@@ -1237,6 +1829,13 @@ export class PlaybackManager {
             self.setAudioStreamIndex(nextIndex, player);
         };
 
+        /**
+         * 切换到下一个字幕轨道
+         *
+         * 循环切换所有可用的字幕流,到达末尾时禁用字幕(index=-1)
+         *
+         * @param {Object} player - 播放器实例
+         */
         self.changeSubtitleStream = function (player) {
             player = player || self._currentPlayer;
             if (player && !enableLocalPlaylistManagement(player)) {
@@ -1279,6 +1878,12 @@ export class PlaybackManager {
             self.setSubtitleStreamIndex(nextIndex, player);
         };
 
+        /**
+         * 获取当前音频流索引
+         *
+         * @param {Object} player - 播放器实例
+         * @returns {number} 音频流索引
+         */
         self.getAudioStreamIndex = function (player) {
             player = player || self._currentPlayer;
             if (player && !enableLocalPlaylistManagement(player)) {
@@ -1288,6 +1893,14 @@ export class PlaybackManager {
             return getPlayerData(player).audioStreamIndex;
         };
 
+        /**
+         * 检查音频流是否被设备支持(无需转码)
+         *
+         * @param {Object} mediaSource - 媒体源对象
+         * @param {number} index - 音频流索引
+         * @param {Object} deviceProfile - 设备配置文件
+         * @returns {boolean} 是否支持该音频流
+         */
         function isAudioStreamSupported(mediaSource, index, deviceProfile) {
             let mediaStream;
             const mediaStreams = mediaSource.MediaStreams;
@@ -1319,6 +1932,14 @@ export class PlaybackManager {
             });
         }
 
+        /**
+         * 设置音频流索引
+         *
+         * 根据播放方法和设备支持情况,选择直接切换或重新请求转码流
+         *
+         * @param {number} index - 音频流索引
+         * @param {Object} player - 播放器实例
+         */
         self.setAudioStreamIndex = function (index, player) {
             player = player || self._currentPlayer;
             if (player && !enableLocalPlaylistManagement(player)) {
@@ -1372,6 +1993,12 @@ export class PlaybackManager {
             return getSavedMaxStreamingBitrate(apiClient, mediaType);
         };
 
+        /**
+         * 检查是否启用自动码率检测
+         *
+         * @param {Object} player - 播放器实例
+         * @returns {boolean} 是否启用自动码率检测
+         */
         self.enableAutomaticBitrateDetection = function (player) {
             player = player || self._currentPlayer;
             if (player?.enableAutomaticBitrateDetection) {
@@ -1388,6 +2015,16 @@ export class PlaybackManager {
             return appSettings.enableAutomaticBitrateDetection(endpointInfo.IsInNetwork, mediaType);
         };
 
+        /**
+         * 设置最大流媒体码率
+         *
+         * 支持手动设置或自动检测码率,修改后会重新请求媒体流
+         *
+         * @param {Object} options - 选项对象
+         * @param {boolean} options.enableAutomaticBitrateDetection - 是否启用自动码率检测
+         * @param {number} options.maxBitrate - 手动设置的最大码率
+         * @param {Object} player - 播放器实例
+         */
         self.setMaxStreamingBitrate = function (options, player) {
             player = player || self._currentPlayer;
             if (player?.setMaxStreamingBitrate) {
@@ -1419,6 +2056,12 @@ export class PlaybackManager {
             });
         };
 
+        /**
+         * 检查是否处于全屏模式
+         *
+         * @param {Object} player - 播放器实例
+         * @returns {boolean} 是否全屏
+         */
         self.isFullscreen = function (player) {
             player = player || self._currentPlayer;
             if (!player.isLocalPlayer || player.isFullscreen) {
@@ -1433,6 +2076,13 @@ export class PlaybackManager {
             return Screenfull.isFullscreen;
         };
 
+        /**
+         * 切换全屏模式
+         *
+         * 支持标准 Screenfull API 和 iOS Safari 的 webkit 全屏 API
+         *
+         * @param {Object} player - 播放器实例
+         */
         self.toggleFullscreen = function (player) {
             player = player || self._currentPlayer;
             if (!player.isLocalPlayer || player.toggleFullscreen) {
@@ -1452,16 +2102,34 @@ export class PlaybackManager {
             }
         };
 
+        /**
+         * 切换画中画模式
+         *
+         * @param {Object} player - 播放器实例
+         * @returns {*} 播放器返回值
+         */
         self.togglePictureInPicture = function (player) {
             player = player || self._currentPlayer;
             return player.togglePictureInPicture();
         };
 
+        /**
+         * 切换 AirPlay
+         *
+         * @param {Object} player - 播放器实例
+         * @returns {*} 播放器返回值
+         */
         self.toggleAirPlay = function (player) {
             player = player || self._currentPlayer;
             return player.toggleAirPlay();
         };
 
+        /**
+         * 获取字幕流索引
+         *
+         * @param {Object} player - 播放器实例
+         * @returns {number} 字幕流索引,-1 表示禁用字幕
+         */
         self.getSubtitleStreamIndex = function (player) {
             player = player || self._currentPlayer;
 
@@ -1476,6 +2144,12 @@ export class PlaybackManager {
             return getPlayerData(player).subtitleStreamIndex;
         };
 
+        /**
+         * 获取第二字幕流索引
+         *
+         * @param {Object} player - 播放器实例
+         * @returns {number} 第二字幕流索引,-1 表示禁用
+         */
         self.getSecondarySubtitleStreamIndex = function (player) {
             player = player || self._currentPlayer;
 
@@ -1494,6 +2168,12 @@ export class PlaybackManager {
             return getPlayerData(player).secondarySubtitleStreamIndex;
         };
 
+        /**
+         * 获取字幕传送方式
+         *
+         * @param {Object} subtitleStream - 字幕流对象
+         * @returns {string} 传送方式: External(外部)、Embed(嵌入)或 Encode(编码)
+         */
         function getDeliveryMethod(subtitleStream) {
             // This will be null for internal subs for local items
             if (subtitleStream.DeliveryMethod) {
@@ -1503,6 +2183,17 @@ export class PlaybackManager {
             return subtitleStream.IsExternal ? 'External' : 'Embed';
         }
 
+        /**
+         * 设置字幕流索引
+         *
+         * 根据字幕传送方式和播放方法,选择直接切换或重新请求转码流:
+         * - External: 可以直接切换
+         * - Embed + DirectPlay: 可以直接切换
+         * - Encode 或 Embed + Transcode: 需要重新请求转码流
+         *
+         * @param {number} index - 字幕流索引,-1 表示禁用字幕
+         * @param {Object} player - 播放器实例
+         */
         self.setSubtitleStreamIndex = function (index, player) {
             player = player || self._currentPlayer;
             if (player && !enableLocalPlaylistManagement(player)) {
@@ -1562,6 +2253,12 @@ export class PlaybackManager {
             getPlayerData(player).subtitleStreamIndex = index;
         };
 
+        /**
+         * 设置第二字幕流索引
+         *
+         * @param {number} index - 第二字幕流索引,-1 表示禁用
+         * @param {Object} player - 播放器实例
+         */
         self.setSecondarySubtitleStreamIndex = function (index, player) {
             player = player || self._currentPlayer;
             if (!self.playerHasSecondarySubtitleSupport(player)) return;
@@ -1595,16 +2292,32 @@ export class PlaybackManager {
             }
         };
 
+        /**
+         * 检查是否支持字幕偏移
+         *
+         * @param {Object} player - 播放器实例
+         * @returns {boolean} 是否支持字幕偏移
+         */
         self.supportSubtitleOffset = function (player) {
             player = player || self._currentPlayer;
             return player && 'setSubtitleOffset' in player;
         };
 
+        /**
+         * 启用字幕偏移显示
+         *
+         * @param {Object} player - 播放器实例
+         */
         self.enableShowingSubtitleOffset = function (player) {
             player = player || self._currentPlayer;
             player.enableShowingSubtitleOffset();
         };
 
+        /**
+         * 禁用字幕偏移显示
+         *
+         * @param {Object} player - 播放器实例
+         */
         self.disableShowingSubtitleOffset = function (player) {
             player = player || self._currentPlayer;
             if (player.disableShowingSubtitleOffset) {
@@ -1612,16 +2325,35 @@ export class PlaybackManager {
             }
         };
 
+        /**
+         * 检查是否启用了字幕偏移显示
+         *
+         * @param {Object} player - 播放器实例
+         * @returns {boolean} 是否显示字幕偏移
+         */
         self.isShowingSubtitleOffsetEnabled = function (player) {
             player = player || self._currentPlayer;
             return player.isShowingSubtitleOffsetEnabled();
         };
 
+        /**
+         * 检查字幕流是否为外部字幕
+         *
+         * @param {number} index - 字幕流索引
+         * @param {Object} player - 播放器实例
+         * @returns {boolean} 是否为外部字幕
+         */
         self.isSubtitleStreamExternal = function (index, player) {
             const stream = self.getSubtitleStream(player, index);
             return stream ? getDeliveryMethod(stream) === 'External' : false;
         };
 
+        /**
+         * 设置字幕偏移
+         *
+         * @param {number} value - 偏移值(毫秒)
+         * @param {Object} player - 播放器实例
+         */
         self.setSubtitleOffset = function (value, player) {
             player = player || self._currentPlayer;
             if (player.setSubtitleOffset) {
@@ -1629,6 +2361,12 @@ export class PlaybackManager {
             }
         };
 
+        /**
+         * 获取播放器字幕偏移
+         *
+         * @param {Object} player - 播放器实例
+         * @returns {number|undefined} 偏移值(毫秒)
+         */
         self.getPlayerSubtitleOffset = function (player) {
             player = player || self._currentPlayer;
             if (player.getSubtitleOffset) {
@@ -1636,11 +2374,25 @@ export class PlaybackManager {
             }
         };
 
+        /**
+         * 检查当前字幕是否可以处理偏移
+         *
+         * 仅外部字幕支持偏移调整
+         *
+         * @param {Object} player - 播放器实例
+         * @returns {boolean} 当前字幕是否可偏移
+         */
         self.canHandleOffsetOnCurrentSubtitle = function (player) {
             const index = self.getSubtitleStreamIndex(player);
             return index !== -1 && self.isSubtitleStreamExternal(index, player);
         };
 
+        /**
+         * 跳转到指定位置
+         *
+         * @param {number} ticks - 目标位置(100 纳秒为单位,1 秒 = 10000000 ticks)
+         * @param {Object} player - 播放器实例
+         */
         self.seek = function (ticks, player) {
             ticks = Math.max(0, ticks);
 
@@ -1652,6 +2404,12 @@ export class PlaybackManager {
             changeStream(player, ticks);
         };
 
+        /**
+         * 相对跳转(快进/快退)
+         *
+         * @param {number} offsetTicks - 偏移量(ticks),正值为快进,负值为快退
+         * @param {Object} player - 播放器实例
+         */
         self.seekRelative = function (offsetTicks, player) {
             player = player || self._currentPlayer;
             if (player && !enableLocalPlaylistManagement(player) && player.seekRelative) {
@@ -1662,6 +2420,15 @@ export class PlaybackManager {
             return this.seek(ticks, player);
         };
 
+        /**
+         * 检查播放器是否支持原生客户端跳转
+         *
+         * 如果是 HLS 流(.m3u8)或者播放器支持 seekable,则可以跳转
+         * 转码流不支持跳转(需要重新请求流)
+         *
+         * @param {Object} player - 播放器实例
+         * @returns {boolean} 是否支持原生跳转
+         */
         // Returns true if the player can seek using native client-side seeking functions
         function canPlayerSeek(player) {
             if (!player) {
@@ -1689,6 +2456,17 @@ export class PlaybackManager {
             return player.duration();
         }
 
+        /**
+         * 切换媒体流(用于跳转、切换音频/字幕轨、调整码率等)
+         *
+         * 根据参数决定是进行客户端跳转还是重新请求转码流:
+         * - 如果支持原生跳转且无其他参数改变,直接调用 currentTime
+         * - 否则重新请求媒体信息并切换流
+         *
+         * @param {Object} player - 播放器实例
+         * @param {number} ticks - 目标位置(ticks)
+         * @param {Object} params - 额外参数(如 AudioStreamIndex, SubtitleStreamIndex, MaxStreamingBitrate 等)
+         */
         function changeStream(player, ticks, params) {
             if (canPlayerSeek(player) && params == null) {
                 player.currentTime(parseInt(ticks / 10000, 10));
@@ -1760,6 +2538,16 @@ export class PlaybackManager {
             });
         }
 
+        /**
+         * 将流 URL 切换到播放器
+         *
+         * 先停止现有的编码会话,然后设置新的流 URL
+         *
+         * @param {Object} apiClient - API 客户端实例
+         * @param {Object} player - 播放器实例
+         * @param {string} playSessionId - 播放会话 ID
+         * @param {Object} streamInfo - 流信息对象
+         */
         function changeStreamToUrl(apiClient, player, playSessionId, streamInfo) {
             const playerData = getPlayerData(player);
 
@@ -1778,6 +2566,14 @@ export class PlaybackManager {
             }
         }
 
+        /**
+         * 将流信息设置到播放器并开始播放
+         *
+         * @param {Object} apiClient - API 客户端实例
+         * @param {Object} player - 播放器实例
+         * @param {Object} streamInfo - 流信息对象
+         * @returns {Promise} 播放 Promise
+         */
         function setSrcIntoPlayer(apiClient, player, streamInfo) {
             const playerData = getPlayerData(player);
 
@@ -1799,6 +2595,19 @@ export class PlaybackManager {
             });
         }
 
+        /**
+         * 将媒体项目转换为可播放的列表
+         *
+         * 根据项目类型(播放列表、系列、季度、艺术家等)进行不同处理:
+         * - 播放列表: 获取列表内容
+         * - 系列/季度: 获取剧集列表(支持继续观看)
+         * - 艺术家/流派: 获取相关音频文件
+         * - 文件夹: 获取内容列表
+         *
+         * @param {Array} items - 媒体项目数组
+         * @param {Object} options - 播放选项
+         * @returns {Promise<Array>} 转换后的项目数组
+         */
         async function translateItemsForPlayback(items, options) {
             if (!items.length) return [];
 
@@ -1818,6 +2627,14 @@ export class PlaybackManager {
             }
         }
 
+        /**
+         * 根据需要对项目进行排序
+         *
+         * 按照原始请求的 ID 顺序排列项目
+         *
+         * @param {Array} items - 项目数组
+         * @param {Object} options - 选项对象
+         */
         function sortItemsIfNeeded(items, options) {
             if (items.length > 1 && options?.ids) {
                 // Use the original request id array for sorting the result in the proper order
@@ -1827,6 +2644,24 @@ export class PlaybackManager {
             }
         }
 
+        /**
+         * 根据项目类型获取相应的播放 Promise
+         *
+         * 支持的类型:
+         * - Program: 直播节目(获取频道)
+         * - Playlist: 播放列表
+         * - MusicArtist/MusicGenre/Genre: 音乐或视频流派
+         * - PhotoAlbum: 相册
+         * - Series/Season: 电视剧系列/季度
+         * - Episode: 单集
+         *
+         * @param {Object} firstItem - 第一个项目
+         * @param {string} serverId - 服务器 ID
+         * @param {Object} options - 选项对象
+         * @param {Object} queryOptions - 查询选项
+         * @param {Array} items - 项目数组
+         * @returns {Promise|null} 播放 Promise 或 null
+         */
         function getPlaybackPromise(firstItem, serverId, options, queryOptions, items) {
             switch (firstItem.Type) {
                 case 'Program':
@@ -1884,6 +2719,20 @@ export class PlaybackManager {
             return getNonItemTypePromise(firstItem, serverId, options, queryOptions);
         }
 
+        /**
+         * 获取非标准项目类型的播放 Promise
+         *
+         * 处理照片、家庭视频文件夹等特殊类型:
+         * - Photo: 获取父文件夹的照片和视频
+         * - 家庭视频文件夹: 获取照片递归列表
+         * - 普通文件夹: 获取音频和视频列表
+         *
+         * @param {Object} firstItem - 第一个项目
+         * @param {string} serverId - 服务器 ID
+         * @param {Object} options - 选项对象
+         * @param {Object} queryOptions - 查询选项
+         * @returns {Promise|null} 播放 Promise 或 null
+         */
         function getNonItemTypePromise(firstItem, serverId, options, queryOptions) {
             if (firstItem.MediaType === 'Photo') {
                 return getItemsForPlayback(serverId, mergePlaybackQueries({
@@ -1940,6 +2789,19 @@ export class PlaybackManager {
             return null;
         }
 
+        /**
+         * 获取电视剧或季度播放 Promise
+         *
+         * 处理逻辑:
+         * - 如果不是随机播放且未指定季度,从第一个未观看的剧集开始
+         * - 获取所有剧集列表(默认限制 100 集)
+         * - 计算正确的起始索引
+         *
+         * @param {Object} firstItem - 第一个项目(Series 或 Season)
+         * @param {Object} options - 选项对象
+         * @param {Array} items - 项目数组
+         * @returns {Promise} 剧集结果对象
+         */
         async function getSeriesOrSeasonPlaybackPromise(firstItem, options, items) {
             const apiClient = ServerConnections.getApiClient(firstItem.ServerId);
             const startSeasonId = firstItem.Type === 'Season' ? items[options.startIndex || 0].Id : undefined;
@@ -2009,6 +2871,16 @@ export class PlaybackManager {
             return episodesResult;
         }
 
+        /**
+         * 获取单集播放 Promise
+         *
+         * 如果只有一个剧集且播放器支持进度,获取同系列的剧集列表
+         *
+         * @param {Object} firstItem - 剧集项目
+         * @param {Object} options - 选项对象
+         * @param {Array} items - 项目数组
+         * @returns {Promise|null} 剧集 Promise 或 null
+         */
         function getEpisodePlaybackPromise(firstItem, options, items) {
             if (items.length === 1 && getPlayer(firstItem, options).supportsProgress !== false) {
                 return getEpisodes(firstItem, options);
@@ -2017,6 +2889,15 @@ export class PlaybackManager {
             }
         }
 
+        /**
+         * 获取剧集列表
+         *
+         * 从指定剧集开始获取系列中的所有剧集(限制 100 集)
+         *
+         * @param {Object} firstItem - 起始剧集
+         * @param {Object} options - 选项对象
+         * @returns {Promise} 剧集结果 Promise
+         */
         function getEpisodes(firstItem, options) {
             return new Promise(function (resolve, reject) {
                 const apiClient = ServerConnections.getApiClient(firstItem.ServerId);
@@ -2041,6 +2922,16 @@ export class PlaybackManager {
             });
         }
 
+        /**
+         * 过滤剧集结果
+         *
+         * 找到起始剧集的索引并设置到结果中
+         *
+         * @param {Object} episodesResult - 剧集结果对象
+         * @param {Object} firstItem - 起始剧集
+         * @param {Object} options - 选项对象
+         * @returns {Object} 处理后的剧集结果
+         */
         function filterEpisodes(episodesResult, firstItem, options) {
             for (const [index, e] of episodesResult.Items.entries()) {
                 if (e.Id === firstItem.Id) {
@@ -2106,6 +2997,16 @@ export class PlaybackManager {
             return playWithIntros(items, options);
         };
 
+        /**
+         * 获取播放器数据
+         *
+         * 从 playerStates 映射中获取或创建播放器状态对象
+         * 注意: 实际返回的是 player 对象而非 state(可能是历史遗留代码)
+         *
+         * @param {Object} player - 播放器实例
+         * @returns {Object} 播放器对象
+         * @throws {Error} 如果 player 或 player.name 为空
+         */
         function getPlayerData(player) {
             if (!player) {
                 throw new Error('player cannot be null');
@@ -2231,6 +3132,15 @@ export class PlaybackManager {
         // Only used internally
         self.getCurrentTicks = getCurrentTicks;
 
+        /**
+         * 播放其他类型的媒体
+         *
+         * 用于播放照片、书籍等非视频/音频类型
+         *
+         * @param {Array} items - 媒体项目数组
+         * @param {Object} options - 播放选项
+         * @returns {Promise} 播放 Promise
+         */
         function playOther(items, options) {
             const playStartIndex = options.startIndex || 0;
             const player = getPlayer(items[playStartIndex], options);
@@ -2242,6 +3152,14 @@ export class PlaybackManager {
             return player.play(options);
         }
 
+        /**
+         * 获取额外的影片部分
+         *
+         * 对于多部分的电影或剧集(PartCount > 1),获取所有部分
+         *
+         * @param {Array} items - 项目数组
+         * @returns {Promise<Array>} 包含所有部分的数组(每个元素本身是数组)
+         */
         const getAdditionalParts = async (items) => {
             const getItemAndParts = async function (item) {
                 if (
@@ -2261,6 +3179,15 @@ export class PlaybackManager {
             return Promise.all(items.map(getItemAndParts));
         };
 
+        /**
+         * 播放媒体(包括片头)
+         *
+         * 如果启用了片头功能,会先获取片头并插入到播放列表前面
+         *
+         * @param {Array} items - 媒体项目数组
+         * @param {Object} options - 播放选项
+         * @returns {Promise} 播放 Promise
+         */
         function playWithIntros(items, options) {
             let playStartIndex = options.startIndex || 0;
             let firstItem = items[playStartIndex];
@@ -2312,13 +3239,36 @@ export class PlaybackManager {
             });
         }
 
-        // Set playlist state. Using a method allows for overloading in derived player implementations
+        /**
+         * 设置播放列表状态
+         *
+         * 更新播放队列管理器的当前播放项
+         * 使用方法而非直接调用,允许派生播放器重写
+         *
+         * @param {string} playlistItemId - 播放列表项 ID
+         * @param {number} index - 项目索引
+         */
         function setPlaylistState(playlistItemId, index) {
             if (!isNaN(index)) {
                 self._playQueueManager.setPlaylistState(playlistItemId, index);
             }
         }
 
+        /**
+         * 内部播放函数
+         *
+         * 执行实际的播放逻辑:
+         * 1. 检查项目有效性
+         * 2. 运行拦截器(PreplayIntercept 插件)
+         * 3. 检测码率
+         * 4. 获取媒体源并开始播放
+         *
+         * @param {Object} item - 媒体项目
+         * @param {Object} playOptions - 播放选项
+         * @param {Function} onPlaybackStartedFn - 播放开始时的回调
+         * @param {Object} prevSource - 前一个媒体源(用于自动选择音轨/字幕)
+         * @returns {Promise} 播放 Promise
+         */
         function playInternal(item, playOptions, onPlaybackStartedFn, prevSource) {
             if (item.IsPlaceHolder) {
                 loading.hide();
@@ -2358,6 +3308,11 @@ export class PlaybackManager {
                 });
         }
 
+        /**
+         * 取消播放
+         *
+         * 销毁当前播放器并触发取消事件
+         */
         function cancelPlayback() {
             const player = self._currentPlayer;
 
@@ -2369,12 +3324,24 @@ export class PlaybackManager {
             Events.trigger(self, 'playbackcancelled');
         }
 
+        /**
+         * 拦截器拒绝处理
+         *
+         * 当 PreplayIntercept 插件拒绝播放时调用
+         */
         function onInterceptorRejection() {
             cancelPlayback();
 
             return Promise.reject();
         }
 
+        /**
+         * 播放拒绝处理
+         *
+         * 处理播放启动失败,显示相应的错误消息
+         *
+         * @param {Error|Response} e - 错误对象
+         */
         function onPlaybackRejection(e) {
             cancelPlayback();
 
@@ -2393,10 +3360,27 @@ export class PlaybackManager {
             return Promise.reject();
         }
 
+        /**
+         * 销毁播放器
+         *
+         * 调用播放器的 destroy 方法释放资源
+         *
+         * @param {Object} player - 播放器实例
+         */
         function destroyPlayer(player) {
             player.destroy();
         }
 
+        /**
+         * 运行播放前拦截器
+         *
+         * 按顺序执行所有 PreplayIntercept 插件
+         * 允许插件在播放开始前进行干预(如显示警告、提示等)
+         *
+         * @param {Object} item - 媒体项目
+         * @param {Object} playOptions - 播放选项
+         * @returns {Promise} 拦截 Promise
+         */
         function runInterceptors(item, playOptions) {
             return new Promise(function (resolve, reject) {
                 const interceptors = pluginManager.ofType(PluginType.PreplayIntercept);
@@ -2419,6 +3403,17 @@ export class PlaybackManager {
             });
         }
 
+        /**
+         * 运行下一个播放前拦截器
+         *
+         * 递归执行拦截器链
+         *
+         * @param {Array} interceptors - 拦截器数组
+         * @param {number} index - 当前索引
+         * @param {Object} options - 选项对象
+         * @param {Function} resolve - Promise resolve
+         * @param {Function} reject - Promise reject
+         */
         function runNextPrePlay(interceptors, index, options, resolve, reject) {
             if (index >= interceptors.length) {
                 resolve();
@@ -2432,6 +3427,19 @@ export class PlaybackManager {
             }, reject);
         }
 
+        /**
+         * 将播放列表发送到播放器
+         *
+         * 用于不支持本地播放列表管理的播放器(如远程播放器)
+         *
+         * @param {Object} player - 播放器实例
+         * @param {Array} items - 项目数组
+         * @param {Object} deviceProfile - 设备配置
+         * @param {Object} apiClient - API 客户端
+         * @param {string} mediaSourceId - 媒体源 ID
+         * @param {Object} options - 选项对象
+         * @returns {Promise} 播放 Promise
+         */
         function sendPlaybackListToPlayer(player, items, deviceProfile, apiClient, mediaSourceId, options) {
             return setStreamUrls(items, deviceProfile, options.maxBitrate, apiClient, options.startPosition).then(function () {
                 loading.hide();
@@ -2447,6 +3455,23 @@ export class PlaybackManager {
             });
         }
 
+        /**
+         * 为下一项评分音轨/字幕流
+         *
+         * 根据前一项的轨道选择,自动匹配新项目最合适的轨道:
+         * - 编解码器相同: +1 分
+         * - 相对位置相同: +1 分
+         * - 显示标题相同: +2 分
+         * - 语言相同(非 und): +2 分
+         * - 阈值: 至少 3 分
+         *
+         * @param {number} prevIndex - 前一项的流索引
+         * @param {Object} prevSource - 前一个媒体源
+         * @param {Array} mediaStreams - 新项目的媒体流数组
+         * @param {Object} trackOptions - 输出选项(DefaultAudioStreamIndex/DefaultSubtitleStreamIndex)
+         * @param {string} streamType - 流类型('Audio' 或 'Subtitle')
+         * @param {boolean} isSecondarySubtitle - 是否为辅助字幕
+         */
         function rankStreamType(prevIndex, prevSource, mediaStreams, trackOptions, streamType, isSecondarySubtitle) {
             if (prevIndex == -1) {
                 console.debug(`AutoSet ${streamType} - No Stream Set`);
@@ -2522,6 +3547,17 @@ export class PlaybackManager {
             }
         }
 
+        /**
+         * 自动设置下一项的轨道
+         *
+         * 根据用户设置和前一项的选择,自动匹配音轨和字幕轨
+         *
+         * @param {Object} prevSource - 前一个媒体源
+         * @param {Array} mediaStreams - 当前项目的媒体流
+         * @param {Object} trackOptions - 输出选项对象
+         * @param {boolean} audio - 是否启用音轨记忆
+         * @param {boolean} subtitle - 是否启用字幕记忆
+         */
         function autoSetNextTracks(prevSource, mediaStreams, trackOptions, audio, subtitle) {
             try {
                 if (!prevSource) return;
@@ -2547,6 +3583,17 @@ export class PlaybackManager {
             }
         }
 
+        /**
+         * 检测网络码率
+         *
+         * 如果启用了自动码率检测,会测量当前网络速度
+         * 否则返回保存的最大码率设置
+         *
+         * @param {Object} apiClient - API 客户端
+         * @param {Object} item - 媒体项目
+         * @param {string} mediaType - 媒体类型
+         * @returns {Promise<number>} 码率 Promise
+         */
         function detectBitrate(apiClient, item, mediaType) {
             // FIXME: This is gnarly, but don't want to change too much here in a bugfix
             return Promise.resolve()
@@ -2570,6 +3617,22 @@ export class PlaybackManager {
                 .catch(() => getSavedMaxStreamingBitrate(apiClient, mediaType));
         }
 
+        /**
+         * 码率检测后播放
+         *
+         * 检测码率后执行实际播放:
+         * 1. 处理播放器切换
+         * 2. 获取设备配置和用户设置
+         * 3. 自动选择音轨/字幕轨
+         * 4. 获取媒体源并开始播放
+         *
+         * @param {number} maxBitrate - 最大码率
+         * @param {Object} item - 媒体项目
+         * @param {Object} playOptions - 播放选项
+         * @param {Function} onPlaybackStartedFn - 播放开始回调
+         * @param {Object} prevSource - 前一个媒体源
+         * @returns {Promise} 播放 Promise
+         */
         function playAfterBitrateDetect(maxBitrate, item, playOptions, onPlaybackStartedFn, prevSource) {
             const startPosition = playOptions.startPositionTicks;
 
@@ -2778,6 +3841,23 @@ export class PlaybackManager {
             });
         };
 
+        /**
+         * 创建流信息对象
+         *
+         * 根据媒体源生成流信息,包括:
+         * - URL 和 MIME 类型
+         * - 播放方法(DirectPlay/DirectStream/Transcode)
+         * - 字幕轨道信息
+         * - 转码偏移量
+         *
+         * @param {Object} apiClient - API 客户端
+         * @param {string} type - 媒体类型
+         * @param {Object} item - 媒体项目
+         * @param {Object} mediaSource - 媒体源对象
+         * @param {number} startPosition - 起始位置(ticks)
+         * @param {Object} player - 播放器实例
+         * @returns {Object} 流信息对象
+         */
         function createStreamInfo(apiClient, type, item, mediaSource, startPosition, player) {
             let mediaUrl;
             let contentType;
@@ -2879,6 +3959,17 @@ export class PlaybackManager {
             return resultInfo;
         }
 
+        /**
+         * 获取文本轨道(外部字幕)
+         *
+         * 过滤出 DeliveryMethod 为 'External' 的字幕流
+         * 这些字幕会以单独的文件加载
+         *
+         * @param {Object} apiClient - API 客户端
+         * @param {Object} item - 媒体项目
+         * @param {Object} mediaSource - 媒体源对象
+         * @returns {Array} 字幕轨道数组
+         */
         function getTextTracks(apiClient, item, mediaSource) {
             const subtitleStreams = mediaSource.MediaStreams.filter(function (s) {
                 return s.Type === 'Subtitle';
@@ -2912,6 +4003,23 @@ export class PlaybackManager {
             return tracks;
         }
 
+        /**
+         * 获取播放媒体源
+         *
+         * 执行完整的媒体源获取流程:
+         * 1. 获取播放信息
+         * 2. 选择最优媒体源
+         * 3. 如需要,打开直播流
+         * 4. 检查是否支持直接播放
+         *
+         * @param {Object} player - 播放器实例
+         * @param {Object} apiClient - API 客户端
+         * @param {Object} deviceProfile - 设备配置
+         * @param {Object} item - 媒体项目
+         * @param {string} mediaSourceId - 媒体源 ID
+         * @param {Object} options - 选项对象
+         * @returns {Promise<Object>} 媒体源 Promise
+         */
         function getPlaybackMediaSource(player, apiClient, deviceProfile, item, mediaSourceId, options) {
             options.isPlayback = true;
 
@@ -2949,6 +4057,16 @@ export class PlaybackManager {
             });
         }
 
+        /**
+         * 获取适合的播放器
+         *
+         * 从自动播放器列表中选择第一个支持该项目的播放器
+         *
+         * @param {Object} item - 媒体项目
+         * @param {Object} playOptions - 播放选项
+         * @param {boolean} forceLocalPlayers - 强制使用本地播放器
+         * @returns {Object} 播放器实例
+         */
         function getPlayer(item, playOptions, forceLocalPlayers) {
             const serverItem = isServerItem(item);
             return getAutomaticPlayers(self, forceLocalPlayers).filter(function (p) {
@@ -3082,6 +4200,14 @@ export class PlaybackManager {
             return self.previousTrack(player);
         };
 
+        /**
+         * 获取前一个媒体源
+         *
+         * 合并当前媒体源和播放器数据,用于自动选择下一项的轨道
+         *
+         * @param {Object} player - 播放器实例
+         * @returns {Object} 包含默认轨道索引的媒体源对象
+         */
         function getPreviousSource(player) {
             const prevSource = self.currentMediaSource(player);
             const prevPlayerData = getPlayerData(player);
@@ -3142,6 +4268,14 @@ export class PlaybackManager {
             return queue(options, 'next', player);
         };
 
+        /**
+         * 添加到播放队列
+         *
+         * @param {Object} options - 队列选项
+         * @param {string} mode - 模式('' 或 'next')
+         * @param {Object} player - 播放器实例
+         * @returns {Promise} 队列 Promise
+         */
         function queue(options, mode, player) {
             player = player || self._currentPlayer;
 
@@ -3170,6 +4304,15 @@ export class PlaybackManager {
             }
         }
 
+        /**
+         * 将所有项目添加到队列
+         *
+         * 根据播放器类型和模式选择不同的队列方式
+         *
+         * @param {Array} items - 项目数组
+         * @param {string} mode - 模式('' 或 'next')
+         * @param {Object} player - 播放器实例
+         */
         function queueAll(items, mode, player) {
             if (!items.length) {
                 return;
@@ -3214,17 +4357,32 @@ export class PlaybackManager {
             Events.trigger(player, 'playlistitemadd');
         }
 
+        /**
+         * 播放进度间隔处理
+         *
+         * 每 10 秒触发一次,发送进度更新到服务器
+         */
         function onPlayerProgressInterval() {
             const player = this;
             sendProgressUpdate(player, 'timeupdate');
         }
 
+        /**
+         * 启动播放进度计时器
+         *
+         * @param {Object} player - 播放器实例
+         */
         function startPlaybackProgressTimer(player) {
             stopPlaybackProgressTimer(player);
 
             player._progressInterval = setInterval(onPlayerProgressInterval.bind(player), 10000);
         }
 
+        /**
+         * 停止播放进度计时器
+         *
+         * @param {Object} player - 播放器实例
+         */
         function stopPlaybackProgressTimer(player) {
             if (player._progressInterval) {
                 clearInterval(player._progressInterval);
@@ -3232,6 +4390,21 @@ export class PlaybackManager {
             }
         }
 
+        /**
+         * 播放开始处理
+         *
+         * 处理播放开始事件:
+         * 1. 设置当前播放器
+         * 2. 保存流信息和轨道选择
+         * 3. 上报播放开始到服务器
+         * 4. 触发 playbackstart 事件
+         * 5. 启动进度计时器
+         *
+         * @param {Object} player - 播放器实例
+         * @param {Object} playOptions - 播放选项
+         * @param {Object} streamInfo - 流信息对象
+         * @param {Object} mediaSource - 媒体源对象
+         */
         function onPlaybackStarted(player, playOptions, streamInfo, mediaSource) {
             if (!player) {
                 throw new Error('player cannot be null');
@@ -3274,6 +4447,15 @@ export class PlaybackManager {
             startPlaybackProgressTimer(player);
         }
 
+        /**
+         * 自管理播放器的播放开始处理
+         *
+         * 用于不支持本地播放列表管理的播放器(如远程播放器)
+         *
+         * @param {Event} e - 事件对象
+         * @param {Object} item - 媒体项目
+         * @param {Object} mediaSource - 媒体源
+         */
         function onPlaybackStartedFromSelfManagingPlayer(e, item, mediaSource) {
             const player = this;
             setCurrentPlayerInternal(player);
@@ -3305,6 +4487,12 @@ export class PlaybackManager {
             startPlaybackProgressTimer(player);
         }
 
+        /**
+         * 自管理播放器的播放停止处理
+         *
+         * @param {Event} e - 事件对象
+         * @param {Object} playerStopInfo - 停止信息对象
+         */
         function onPlaybackStoppedFromSelfManagingPlayer(e, playerStopInfo) {
             const player = this;
 
@@ -3349,11 +4537,15 @@ export class PlaybackManager {
         }
 
         /**
-         * @param {object} streamInfo
-         * @param {MediaError} errorType
-         * @param {boolean} currentlyPreventsVideoStreamCopy
-         * @param {boolean} currentlyPreventsAudioStreamCopy
-         * @returns {boolean} Returns true if the stream should be retried by transcoding.
+         * 检查是否应该重试转码
+         *
+         * 当播放出错时,判断是否可以通过强制转码来解决
+         *
+         * @param {object} streamInfo - 流信息
+         * @param {MediaError} errorType - 错误类型
+         * @param {boolean} currentlyPreventsVideoStreamCopy - 当前是否禁止视频流复制
+         * @param {boolean} currentlyPreventsAudioStreamCopy - 当前是否禁止音频流复制
+         * @returns {boolean} 是否应该重试转码
          */
         function enablePlaybackRetryWithTranscoding(streamInfo, errorType, currentlyPreventsVideoStreamCopy, currentlyPreventsAudioStreamCopy) {
             return streamInfo.mediaSource.SupportsTranscoding
@@ -3405,6 +4597,18 @@ export class PlaybackManager {
             onPlaybackStopped.call(player, e, `.${errorType}`);
         }
 
+        /**
+         * 播放停止处理
+         *
+         * 处理播放停止事件:
+         * 1. 停止进度计时器
+         * 2. 上报播放停止到服务器
+         * 3. 触发 playbackstop 事件
+         * 4. 处理下一项或错误显示
+         *
+         * @param {Event} e - 事件对象
+         * @param {string} displayErrorCode - 错误代码(可选)
+         */
         function onPlaybackStopped(e, displayErrorCode) {
             const player = this;
 
@@ -3476,6 +4680,16 @@ export class PlaybackManager {
             }
         }
 
+        /**
+         * 播放切换处理
+         *
+         * 在新项目开始播放时,处理当前播放器的清理工作
+         *
+         * @param {Object} activePlayer - 当前活跃播放器
+         * @param {Object} newPlayer - 新播放器
+         * @param {Object} newItem - 新项目
+         * @returns {Promise} 切换 Promise
+         */
         function onPlaybackChanging(activePlayer, newPlayer, newItem) {
             const state = self.getPlayerState(activePlayer);
 
@@ -3514,6 +4728,11 @@ export class PlaybackManager {
             });
         }
 
+        /**
+         * 绑定停止事件
+         *
+         * @param {Object} player - 播放器实例
+         */
         function bindStopped(player) {
             if (enableLocalPlaylistManagement(player)) {
                 Events.off(player, 'stopped', onPlaybackStopped);
@@ -3521,55 +4740,94 @@ export class PlaybackManager {
             }
         }
 
+        /**
+         * 播放时间更新事件处理
+         */
         function onPlaybackTimeUpdate() {
             const player = this;
             sendProgressUpdate(player, 'timeupdate');
         }
 
+        /**
+         * 播放暂停事件处理
+         */
         function onPlaybackPause() {
             const player = this;
             sendProgressUpdate(player, 'pause');
         }
 
+        /**
+         * 播放恢复事件处理
+         */
         function onPlaybackUnpause() {
             const player = this;
             sendProgressUpdate(player, 'unpause');
         }
 
+        /**
+         * 音量变化事件处理
+         */
         function onPlaybackVolumeChange() {
             const player = this;
             sendProgressUpdate(player, 'volumechange');
         }
 
+        /**
+         * 重复模式变化事件处理
+         */
         function onRepeatModeChange() {
             const player = this;
             sendProgressUpdate(player, 'repeatmodechange');
         }
 
+        /**
+         * 随机队列模式变化事件处理
+         */
         function onShuffleQueueModeChange() {
             const player = this;
             sendProgressUpdate(player, 'shufflequeuemodechange');
         }
 
+        /**
+         * 播放列表项移动事件处理
+         */
         function onPlaylistItemMove() {
             const player = this;
             sendProgressUpdate(player, 'playlistitemmove', true);
         }
 
+        /**
+         * 播放列表项移除事件处理
+         */
         function onPlaylistItemRemove() {
             const player = this;
             sendProgressUpdate(player, 'playlistitemremove', true);
         }
 
+        /**
+         * 播放列表项添加事件处理
+         */
         function onPlaylistItemAdd() {
             const player = this;
             sendProgressUpdate(player, 'playlistitemadd', true);
         }
 
+        /**
+         * 解除绑定停止事件
+         *
+         * @param {Object} player - 播放器实例
+         */
         function unbindStopped(player) {
             Events.off(player, 'stopped', onPlaybackStopped);
         }
 
+        /**
+         * 初始化传统音量方法
+         *
+         * 为老版本播放器添加 getVolume/setVolume 方法
+         *
+         * @param {Object} player - 播放器实例
+         */
         function initLegacyVolumeMethods(player) {
             player.getVolume = function () {
                 return player.volume();
@@ -3579,6 +4837,13 @@ export class PlaybackManager {
             };
         }
 
+        /**
+         * 初始化媒体播放器
+         *
+         * 注册新播放器并绑定必要的事件处理程序
+         *
+         * @param {Object} player - 播放器实例
+         */
         function initMediaPlayer(player) {
             players.push(player);
             players.sort(function (a, b) {
@@ -3634,6 +4899,15 @@ export class PlaybackManager {
 
         pluginManager.ofType(PluginType.MediaPlayer).forEach(initMediaPlayer);
 
+        /**
+         * 发送进度更新
+         *
+         * 将当前播放状态上报到服务器
+         *
+         * @param {Object} player - 播放器实例
+         * @param {string} progressEventName - 进度事件名称
+         * @param {boolean} reportPlaylist - 是否上报播放列表
+         */
         function sendProgressUpdate(player, progressEventName, reportPlaylist) {
             if (!player) {
                 throw new Error('player cannot be null');
@@ -3658,6 +4932,17 @@ export class PlaybackManager {
             }
         }
 
+        /**
+         * 获取直播流媒体信息
+         *
+         * 每 10 分钟更新一次直播流的媒体信息(可能变化的音轨/字幕轨)
+         *
+         * @param {Object} player - 播放器实例
+         * @param {Object} streamInfo - 流信息对象
+         * @param {Object} mediaSource - 媒体源对象
+         * @param {string} liveStreamId - 直播流 ID
+         * @param {string} serverId - 服务器 ID
+         */
         function getLiveStreamMediaInfo(player, streamInfo, mediaSource, liveStreamId, serverId) {
             console.debug('getLiveStreamMediaInfo');
 
@@ -3671,6 +4956,11 @@ export class PlaybackManager {
             });
         }
 
+        /**
+         * 应用关闭处理
+         *
+         * 在应用关闭前尝试上报播放停止状态到服务器
+         */
         self.onAppClose = function () {
             const player = this._currentPlayer;
 
@@ -3681,6 +4971,14 @@ export class PlaybackManager {
             }
         };
 
+        /**
+         * 获取播放开始时间
+         *
+         * 返回播放开始的时间戳(ticks)
+         *
+         * @param {Object} player - 播放器实例
+         * @returns {number|null} 开始时间(ticks)或null
+         */
         self.playbackStartTime = function (player = this._currentPlayer) {
             if (player && !enableLocalPlaylistManagement(player) && !player.isLocalPlayer) {
                 return player.playbackStartTime();
@@ -3701,10 +4999,23 @@ export class PlaybackManager {
         this._skipSegment = bindSkipSegment(self);
     }
 
+    /**
+     * 获取当前播放器
+     *
+     * @returns {Object|null} 当前活动的播放器实例
+     */
     getCurrentPlayer() {
         return this._currentPlayer;
     }
 
+    /**
+     * 获取当前播放时间
+     *
+     * 返回当前播放位置(毫秒)
+     *
+     * @param {Object} player - 播放器实例
+     * @returns {number} 当前时间(毫秒)
+     */
     currentTime(player = this._currentPlayer) {
         if (player && !enableLocalPlaylistManagement(player) && !player.isLocalPlayer) {
             return player.currentTime();
@@ -3713,10 +5024,23 @@ export class PlaybackManager {
         return this.getCurrentTicks(player) / 10000;
     }
 
+    /**
+     * 获取下一个播放项目信息
+     *
+     * @returns {Object|null} 包含 item、index 的对象
+     */
     getNextItem() {
         return this._playQueueManager.getNextItemInfo();
     }
 
+    /**
+     * 获取下一个播放项目的完整信息
+     *
+     * 从服务器获取下一项的完整数据
+     *
+     * @param {Object} player - 播放器实例
+     * @returns {Promise} 项目对象的 Promise
+     */
     nextItem(player = this._currentPlayer) {
         if (player && !enableLocalPlaylistManagement(player)) {
             return player.nextItem();
@@ -3732,6 +5056,12 @@ export class PlaybackManager {
         return apiClient.getItem(apiClient.getCurrentUserId(), nextItem.item.Id);
     }
 
+    /**
+     * 检查项目是否可以添加到播放队列
+     *
+     * @param {Object} item - 媒体项目
+     * @returns {boolean} 是否可以排队
+     */
     canQueue(item) {
         if (item.Type === 'MusicAlbum' || item.Type === 'MusicArtist' || item.Type === 'MusicGenre') {
             return this.canQueueMediaType('Audio');
@@ -3739,6 +5069,12 @@ export class PlaybackManager {
         return this.canQueueMediaType(item.MediaType);
     }
 
+    /**
+     * 检查媒体类型是否可以排队
+     *
+     * @param {string} mediaType - 媒体类型(Audio/Video/Photo)
+     * @returns {boolean} 当前播放器是否支持该类型
+     */
     canQueueMediaType(mediaType) {
         if (this._currentPlayer) {
             return this._currentPlayer.canPlayMediaType(mediaType);
@@ -3747,6 +5083,12 @@ export class PlaybackManager {
         return false;
     }
 
+    /**
+     * 检查是否静音
+     *
+     * @param {Object} player - 播放器实例
+     * @returns {boolean} 是否静音
+     */
     isMuted(player = this._currentPlayer) {
         if (player) {
             return player.isMuted();
@@ -3755,12 +5097,24 @@ export class PlaybackManager {
         return false;
     }
 
+    /**
+     * 设置静音状态
+     *
+     * @param {boolean} mute - 是否静音
+     * @param {Object} player - 播放器实例
+     */
     setMute(mute, player = this._currentPlayer) {
         if (player) {
             player.setMute(mute);
         }
     }
 
+    /**
+     * 切换静音状态
+     *
+     * @param {boolean} mute - 静音状态(可选)
+     * @param {Object} player - 播放器实例
+     */
     toggleMute(mute, player = this._currentPlayer) {
         if (player) {
             if (player.toggleMute) {
@@ -3771,10 +5125,19 @@ export class PlaybackManager {
         }
     }
 
+    /**
+     * 切换显示镜像状态
+     */
     toggleDisplayMirroring() {
         this.enableDisplayMirroring(!this.enableDisplayMirroring());
     }
 
+    /**
+     * 启用/禁用显示镜像
+     *
+     * @param {boolean} enabled - 是否启用镜像,不传参数时返回当前状态
+     * @returns {boolean|undefined} 当前状态或 undefined
+     */
     enableDisplayMirroring(enabled) {
         if (enabled != null) {
             const val = enabled ? '1' : '0';
@@ -3785,6 +5148,13 @@ export class PlaybackManager {
         return (appSettings.get('displaymirror') || '') !== '0';
     }
 
+    /**
+     * 播放下一章节
+     *
+     * 跳转到当前位置之后的下一章节,没有则播放下一曲目
+     *
+     * @param {Object} player - 播放器实例
+     */
     nextChapter(player = this._currentPlayer) {
         const item = this.currentItem(player);
 
@@ -3801,6 +5171,14 @@ export class PlaybackManager {
         }
     }
 
+    /**
+     * 播放上一章节
+     *
+     * 跳转到当前位置之前的章节,没有则播放上一曲目
+     * 在前 10 秒内跳转会回到前一章节
+     *
+     * @param {Object} player - 播放器实例
+     */
     previousChapter(player = this._currentPlayer) {
         const item = this.currentItem(player);
 
@@ -3825,6 +5203,13 @@ export class PlaybackManager {
         }
     }
 
+    /**
+     * 快进
+     *
+     * 根据用户设置的快进长度跳转(默认 15 秒)
+     *
+     * @param {Object} player - 播放器实例
+     */
     fastForward(player = this._currentPlayer) {
         if (player.fastForward != null) {
             player.fastForward(userSettings.skipForwardLength());
@@ -3837,6 +5222,13 @@ export class PlaybackManager {
         this.seekRelative(offsetTicks, player);
     }
 
+    /**
+     * 快退
+     *
+     * 根据用户设置的快退长度跳转(默认 15 秒)
+     *
+     * @param {Object} player - 播放器实例
+     */
     rewind(player = this._currentPlayer) {
         if (player.rewind != null) {
             player.rewind(userSettings.skipBackLength());
@@ -3849,6 +5241,12 @@ export class PlaybackManager {
         this.seekRelative(offsetTicks, player);
     }
 
+    /**
+     * 按百分比跳转
+     *
+     * @param {number} percent - 目标位置百分比(0-100)
+     * @param {Object} player - 播放器实例
+     */
     seekPercent(percent, player = this._currentPlayer) {
         let ticks = this.duration(player) || 0;
 
@@ -3857,11 +5255,25 @@ export class PlaybackManager {
         this.seek(parseInt(ticks, 10), player);
     }
 
+    /**
+     * 按毫秒跳转
+     *
+     * @param {number} ms - 目标位置(毫秒)
+     * @param {Object} player - 播放器实例
+     */
     seekMs(ms, player = this._currentPlayer) {
         const ticks = ms * 10000;
         this.seek(ticks, player);
     }
 
+    /**
+     * 播放预告片
+     *
+     * 优先播放本地预告片,其次播放远程预告片 URL
+     *
+     * @param {Object} item - 媒体项目
+     * @returns {Promise} 播放 Promise
+     */
     async playTrailers(item) {
         const player = this._currentPlayer;
 
@@ -3898,12 +5310,29 @@ export class PlaybackManager {
         return Promise.reject();
     }
 
+    /**
+     * 获取字幕URL
+     *
+     * 根据字幕流是否为外部URL返回相应的完整URL
+     *
+     * @param {Object} textStream - 字幕流对象
+     * @param {string} serverId - 服务器ID
+     * @returns {string} 字幕URL
+     */
     getSubtitleUrl(textStream, serverId) {
         const apiClient = ServerConnections.getApiClient(serverId);
 
         return !textStream.IsExternalUrl ? apiClient.getUrl(textStream.DeliveryUrl) : textStream.DeliveryUrl;
     }
 
+    /**
+     * 停止播放
+     *
+     * 停止当前播放器并清理状态
+     *
+     * @param {Object} player - 播放器实例
+     * @returns {Promise} 停止Promise
+     */
     stop(player) {
         player = player || this._currentPlayer;
         if (player) {
@@ -3918,6 +5347,14 @@ export class PlaybackManager {
         return Promise.resolve();
     }
 
+    /**
+     * 获取缓冲范围
+     *
+     * 返回已缓冲的时间范围数组
+     *
+     * @param {Object} player - 播放器实例
+     * @returns {Array} 缓冲范围数组
+     */
     getBufferedRanges(player = this._currentPlayer) {
         if (player?.getBufferedRanges) {
             return player.getBufferedRanges();
@@ -3926,6 +5363,14 @@ export class PlaybackManager {
         return [];
     }
 
+    /**
+     * 切换播放/暂停状态
+     *
+     * 如果正在播放则暂停,如果已暂停则播放
+     *
+     * @param {Object} player - 播放器实例
+     * @returns {Promise|undefined} 操作Promise
+     */
     playPause(player = this._currentPlayer) {
         if (player) {
             if (player.playPause) {
@@ -3940,24 +5385,46 @@ export class PlaybackManager {
         }
     }
 
+    /**
+     * 检查是否已暂停
+     *
+     * @param {Object} player - 播放器实例
+     * @returns {boolean|undefined} 是否暂停
+     */
     paused(player = this._currentPlayer) {
         if (player) {
             return player.paused();
         }
     }
 
+    /**
+     * 暂停播放
+     *
+     * @param {Object} player - 播放器实例
+     */
     pause(player = this._currentPlayer) {
         if (player) {
             player.pause();
         }
     }
 
+    /**
+     * 恢复播放
+     *
+     * @param {Object} player - 播放器实例
+     */
     unpause(player = this._currentPlayer) {
         if (player) {
             player.unpause();
         }
     }
 
+    /**
+     * 设置播放速率
+     *
+     * @param {number} value - 播放速率(0.25, 0.5, 1.0, 1.25, 1.5, 2.0 等)
+     * @param {Object} player - 播放器实例
+     */
     setPlaybackRate(value, player = this._currentPlayer) {
         if (player?.setPlaybackRate) {
             player.setPlaybackRate(value);
@@ -3967,6 +5434,12 @@ export class PlaybackManager {
         }
     }
 
+    /**
+     * 获取播放速率
+     *
+     * @param {Object} player - 播放器实例
+     * @returns {number|null} 播放速率
+     */
     getPlaybackRate(player = this._currentPlayer) {
         if (player?.getPlaybackRate) {
             return player.getPlaybackRate();
@@ -3975,6 +5448,14 @@ export class PlaybackManager {
         return null;
     }
 
+    /**
+     * 创建即时混音播放列表
+     *
+     * 根据项目生成相似风格的播放列表(最多 200 首)
+     *
+     * @param {Object} item - 媒体项目
+     * @param {Object} player - 播放器实例
+     */
     instantMix(item, player = this._currentPlayer) {
         if (player?.instantMix) {
             return player.instantMix(item);
@@ -3996,6 +5477,13 @@ export class PlaybackManager {
         });
     }
 
+    /**
+     * 随机播放项目
+     *
+     * @param {Object} shuffleItem - 要随机播放的项目(如专辑、播放列表等)
+     * @param {Object} player - 播放器实例
+     * @returns {Promise} 播放 Promise
+     */
     shuffle(shuffleItem, player = this._currentPlayer) {
         if (player?.shuffle) {
             return player.shuffle(shuffleItem);
@@ -4004,6 +5492,12 @@ export class PlaybackManager {
         return this.play({ items: [shuffleItem], shuffle: true });
     }
 
+    /**
+     * 获取音频轨道列表
+     *
+     * @param {Object} player - 播放器实例
+     * @returns {Array} 音频流数组(按显示顺序排序)
+     */
     audioTracks(player = this._currentPlayer) {
         if (player.audioTracks) {
             const result = player.audioTracks();
@@ -4020,6 +5514,12 @@ export class PlaybackManager {
         }).sort(itemHelper.sortTracks);
     }
 
+    /**
+     * 获取字幕轨道列表
+     *
+     * @param {Object} player - 播放器实例
+     * @returns {Array} 字幕流数组(按显示顺序排序)
+     */
     subtitleTracks(player = this._currentPlayer) {
         if (player.subtitleTracks) {
             const result = player.subtitleTracks();
@@ -4036,6 +5536,18 @@ export class PlaybackManager {
         }).sort(itemHelper.sortTracks);
     }
 
+    /**
+     * 获取播放器支持的命令列表
+     *
+     * 返回播放器支持的所有控制命令,如:
+     * - 音量控制: VolumeUp, VolumeDown, SetVolume
+     * - 播放控制: SetAudioStreamIndex, SetSubtitleStreamIndex
+     * - 显示控制: ToggleFullscreen, SetBrightness
+     * - 特殊功能: PictureInPicture, AirPlay
+     *
+     * @param {Object} player - 播放器实例
+     * @returns {Array<string>} 支持的命令数组
+     */
     getSupportedCommands(player) {
         player = player || this._currentPlayer || { isLocalPlayer: true };
 
@@ -4090,6 +5602,12 @@ export class PlaybackManager {
         return info ? info.supportedCommands : [];
     }
 
+    /**
+     * 设置重复播放模式
+     *
+     * @param {string} value - 重复模式: RepeatNone(不重复), RepeatAll(全部重复), RepeatOne(单曲循环)
+     * @param {Object} player - 播放器实例
+     */
     setRepeatMode(value, player = this._currentPlayer) {
         if (player && !enableLocalPlaylistManagement(player)) {
             return player.setRepeatMode(value);
@@ -4099,6 +5617,12 @@ export class PlaybackManager {
         Events.trigger(player, 'repeatmodechange');
     }
 
+    /**
+     * 获取重复播放模式
+     *
+     * @param {Object} player - 播放器实例
+     * @returns {string} 当前重复模式
+     */
     getRepeatMode(player = this._currentPlayer) {
         if (player && !enableLocalPlaylistManagement(player)) {
             return player.getRepeatMode();
@@ -4107,6 +5631,12 @@ export class PlaybackManager {
         return this._playQueueManager.getRepeatMode();
     }
 
+    /**
+     * 设置随机播放模式
+     *
+     * @param {string} value - 随机模式: Shuffle(随机), Sorted(顺序)
+     * @param {Object} player - 播放器实例
+     */
     setQueueShuffleMode(value, player = this._currentPlayer) {
         if (player && !enableLocalPlaylistManagement(player)) {
             return player.setQueueShuffleMode(value);
@@ -4116,6 +5646,12 @@ export class PlaybackManager {
         Events.trigger(player, 'shufflequeuemodechange');
     }
 
+    /**
+     * 获取随机播放模式
+     *
+     * @param {Object} player - 播放器实例
+     * @returns {string} 当前随机模式
+     */
     getQueueShuffleMode(player = this._currentPlayer) {
         if (player && !enableLocalPlaylistManagement(player)) {
             return player.getQueueShuffleMode();
@@ -4124,6 +5660,13 @@ export class PlaybackManager {
         return this._playQueueManager.getShuffleMode();
     }
 
+    /**
+     * 切换随机播放模式
+     *
+     * 在Shuffle(随机)和Sorted(顺序)之间切换
+     *
+     * @param {Object} player - 播放器实例
+     */
     toggleQueueShuffleMode(player = this._currentPlayer) {
         let currentvalue;
         if (player && !enableLocalPlaylistManagement(player)) {
@@ -4144,6 +5687,12 @@ export class PlaybackManager {
         Events.trigger(player, 'shufflequeuemodechange');
     }
 
+    /**
+     * 清空播放队列
+     *
+     * @param {boolean} clearCurrentItem - 是否清除当前播放项(默认false)
+     * @param {Object} player - 播放器实例
+     */
     clearQueue(clearCurrentItem = false, player = this._currentPlayer) {
         if (player && !enableLocalPlaylistManagement(player)) {
             return player.clearQueue(clearCurrentItem);
@@ -4153,6 +5702,13 @@ export class PlaybackManager {
         Events.trigger(player, 'playlistitemremove');
     }
 
+    /**
+     * 尝试根据设备名称设置活动播放器
+     *
+     * 规范化设备名称后查找匹配的目标并激活
+     *
+     * @param {string} name - 设备名称
+     */
     trySetActiveDeviceName(name) {
         name = normalizeName(name);
 
@@ -4168,28 +5724,62 @@ export class PlaybackManager {
         });
     }
 
+    /**
+     * 在播放器上显示内容
+     *
+     * 用于远程控制向播放器发送显示内容的指令
+     *
+     * @param {Object} options - 显示选项
+     * @param {Object} player - 播放器实例
+     */
     displayContent(options, player = this._currentPlayer) {
         if (player?.displayContent) {
             player.displayContent(options);
         }
     }
 
+    /**
+     * 开始播放器更新
+     *
+     * 通知播放器开始批量更新(减少UI刷新)
+     *
+     * @param {Object} player - 播放器实例
+     */
     beginPlayerUpdates(player) {
         if (player.beginPlayerUpdates) {
             player.beginPlayerUpdates();
         }
     }
 
+    /**
+     * 结束播放器更新
+     *
+     * 通知播放器结束批量更新,刷新UI
+     *
+     * @param {Object} player - 播放器实例
+     */
     endPlayerUpdates(player) {
         if (player.endPlayerUpdates) {
             player.endPlayerUpdates();
         }
     }
 
+    /**
+     * 设置默认播放器为活动状态
+     *
+     * 将本地播放器(localplayer)设置为当前活动播放器
+     */
     setDefaultPlayerActive() {
         this.setActivePlayer('localplayer');
     }
 
+    /**
+     * 移除活动播放器
+     *
+     * 如果当前活动播放器名称匹配,则切换回默认播放器
+     *
+     * @param {string} name - 播放器名称
+     */
     removeActivePlayer(name) {
         const playerInfo = this.getPlayerInfo();
         if (playerInfo?.name === name) {
@@ -4197,6 +5787,13 @@ export class PlaybackManager {
         }
     }
 
+    /**
+     * 移除活动目标
+     *
+     * 如果当前活动目标ID匹配,则切换回默认播放器
+     *
+     * @param {string} id - 目标ID
+     */
     removeActiveTarget(id) {
         const playerInfo = this.getPlayerInfo();
         if (playerInfo?.id === id) {
@@ -4204,6 +5801,19 @@ export class PlaybackManager {
         }
     }
 
+    /**
+     * 发送控制命令到播放器
+     *
+     * 处理远程控制命令,支持的命令包括:
+     * - 播放模式: SetRepeatMode, SetShuffleQueue
+     * - 音量控制: VolumeUp, VolumeDown, Mute, Unmute, ToggleMute, SetVolume
+     * - 显示设置: SetAspectRatio, SetBrightness, ToggleFullscreen
+     * - 流设置: SetAudioStreamIndex, SetSubtitleStreamIndex, SetMaxStreamingBitrate
+     * - 播放速率: PlaybackRate
+     *
+     * @param {Object} cmd - 命令对象,包含Name和Arguments
+     * @param {Object} player - 播放器实例
+     */
     sendCommand(cmd, player) {
         console.debug('MediaController received command: ' + cmd.Name);
         switch (cmd.Name) {
@@ -4261,10 +5871,24 @@ export class PlaybackManager {
     }
 }
 
+/**
+ * 播放管理器单例实例
+ *
+ * 全局唯一的播放管理器实例,用于控制所有媒体播放
+ */
 export const playbackManager = new PlaybackManager();
+
+// 绑定媒体片段管理器(用于跳过片段功能)
 bindMediaSegmentManager(playbackManager);
+
+// 绑定媒体会话订阅器(用于系统媒体控制集成)
 bindMediaSessionSubscriber(playbackManager);
 
+/**
+ * 页面卸载时的清理处理
+ *
+ * 在浏览器关闭或页面刷新前,尝试上报播放停止状态
+ */
 window.addEventListener('beforeunload', function () {
     try {
         playbackManager.onAppClose();

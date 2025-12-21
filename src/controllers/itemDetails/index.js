@@ -1,56 +1,83 @@
+/**
+ * 项目详情页面控制器
+ * 负责渲染和管理媒体项目的详细信息页面,包括电影、剧集、音乐等
+ */
+
+// Jellyfin SDK 相关导入
 import { BaseItemKind } from '@jellyfin/sdk/lib/generated-client/models/base-item-kind';
 import { PersonKind } from '@jellyfin/sdk/lib/generated-client/models/person-kind';
-import { intervalToDuration } from 'date-fns';
-import DOMPurify from 'dompurify';
-import escapeHtml from 'escape-html';
-import markdownIt from 'markdown-it';
-import isEqual from 'lodash-es/isEqual';
 
-import { appHost } from 'components/apphost';
-import { clearBackdrop, setBackdrops } from 'components/backdrop/backdrop';
-import cardBuilder from 'components/cardbuilder/cardBuilder';
-import { buildCardImage } from 'components/cardbuilder/cardImage';
-import confirm from 'components/confirm/confirm';
-import imageLoader from 'components/images/imageLoader';
-import itemContextMenu from 'components/itemContextMenu';
-import itemHelper from 'components/itemHelper';
-import mediaInfo from 'components/mediainfo/mediainfo';
-import layoutManager from 'components/layoutManager';
-import listView from 'components/listview/listview';
-import loading from 'components/loading/loading';
-import { playbackManager } from 'components/playback/playbackmanager';
-import { appRouter } from 'components/router/appRouter';
-import itemShortcuts from 'components/shortcuts';
-import { AppFeature } from 'constants/appFeature';
-import globalize from 'lib/globalize';
-import { ServerConnections } from 'lib/jellyfin-apiclient';
-import browser from 'scripts/browser';
-import datetime from 'scripts/datetime';
-import dom from 'scripts/dom';
-import { download } from 'scripts/fileDownloader';
-import libraryMenu from 'scripts/libraryMenu';
-import * as userSettings from 'scripts/settings/userSettings';
-import { getPortraitShape, getSquareShape } from 'utils/card';
-import Dashboard from 'utils/dashboard';
-import Events from 'utils/events';
-import { getItemBackdropImageUrl } from 'utils/jellyfin-apiclient/backdropImage';
+// 第三方库导入
+import { intervalToDuration } from 'date-fns'; // 日期时间计算
+import DOMPurify from 'dompurify'; // HTML 内容清理
+import escapeHtml from 'escape-html'; // HTML 转义
+import markdownIt from 'markdown-it'; // Markdown 渲染
+import isEqual from 'lodash-es/isEqual'; // 深度比较
 
-import 'elements/emby-itemscontainer/emby-itemscontainer';
-import 'elements/emby-checkbox/emby-checkbox';
-import 'elements/emby-button/emby-button';
-import 'elements/emby-playstatebutton/emby-playstatebutton';
-import 'elements/emby-ratingbutton/emby-ratingbutton';
-import 'elements/emby-scroller/emby-scroller';
-import 'elements/emby-select/emby-select';
+// 应用组件导入
+import { appHost } from 'components/apphost'; // 应用宿主
+import { clearBackdrop, setBackdrops } from 'components/backdrop/backdrop'; // 背景图片管理
+import cardBuilder from 'components/cardbuilder/cardBuilder'; // 卡片构建器
+import { buildCardImage } from 'components/cardbuilder/cardImage'; // 卡片图片构建
+import confirm from 'components/confirm/confirm'; // 确认对话框
+import imageLoader from 'components/images/imageLoader'; // 图片懒加载
+import itemContextMenu from 'components/itemContextMenu'; // 项目上下文菜单
+import itemHelper from 'components/itemHelper'; // 项目辅助工具
+import mediaInfo from 'components/mediainfo/mediainfo'; // 媒体信息显示
+import layoutManager from 'components/layoutManager'; // 布局管理器
+import listView from 'components/listview/listview'; // 列表视图
+import loading from 'components/loading/loading'; // 加载指示器
+import { playbackManager } from 'components/playback/playbackmanager'; // 播放管理器
+import { appRouter } from 'components/router/appRouter'; // 应用路由
+import itemShortcuts from 'components/shortcuts'; // 键盘快捷键
+import { AppFeature } from 'constants/appFeature'; // 应用功能常量
+import globalize from 'lib/globalize'; // 国际化
+import { ServerConnections } from 'lib/jellyfin-apiclient'; // 服务器连接
+import browser from 'scripts/browser'; // 浏览器检测
+import datetime from 'scripts/datetime'; // 日期时间工具
+import dom from 'scripts/dom'; // DOM 操作工具
+import { download } from 'scripts/fileDownloader'; // 文件下载
+import libraryMenu from 'scripts/libraryMenu'; // 库菜单
+import * as userSettings from 'scripts/settings/userSettings'; // 用户设置
+import { getPortraitShape, getSquareShape } from 'utils/card'; // 卡片形状工具
+import Dashboard from 'utils/dashboard'; // 仪表盘工具
+import Events from 'utils/events'; // 事件系统
+import { getItemBackdropImageUrl } from 'utils/jellyfin-apiclient/backdropImage'; // 背景图片 URL
 
-import 'styles/scrollstyles.scss';
+// Web Components 导入
+import 'elements/emby-itemscontainer/emby-itemscontainer'; // 项目容器元素
+import 'elements/emby-checkbox/emby-checkbox'; // 复选框元素
+import 'elements/emby-button/emby-button'; // 按钮元素
+import 'elements/emby-playstatebutton/emby-playstatebutton'; // 播放状态按钮
+import 'elements/emby-ratingbutton/emby-ratingbutton'; // 评分按钮
+import 'elements/emby-scroller/emby-scroller'; // 滚动容器
+import 'elements/emby-select/emby-select'; // 下拉选择框
 
+// 样式导入
+import 'styles/scrollstyles.scss'; // 滚动条样式
+
+/**
+ * 自动聚焦容器中的元素
+ * @param {HTMLElement} container - 需要自动聚焦的容器元素
+ */
 function autoFocus(container) {
     import('../../components/autoFocuser').then(({ default: autoFocuser }) => {
         autoFocuser.autoFocus(container);
     });
 }
 
+/**
+ * 根据参数获取项目数据的 Promise
+ * @param {Object} apiClient - API 客户端实例
+ * @param {Object} params - 路由参数对象
+ * @param {string} [params.id] - 项目 ID
+ * @param {string} [params.seriesTimerId] - 系列定时器 ID
+ * @param {string} [params.genre] - 类型名称
+ * @param {string} [params.musicgenre] - 音乐类型名称
+ * @param {string} [params.musicartist] - 音乐艺术家名称
+ * @returns {Promise} 返回项目数据的 Promise
+ * @throws {Error} 当请求参数无效时抛出错误
+ */
 function getPromise(apiClient, params) {
     const id = params.id;
 
@@ -77,6 +104,12 @@ function getPromise(apiClient, params) {
     throw new Error('Invalid request');
 }
 
+/**
+ * 显示或隐藏页面中指定类名的所有元素
+ * @param {HTMLElement} page - 页面容器元素
+ * @param {string} className - CSS 类名
+ * @param {boolean} show - true 表示显示,false 表示隐藏
+ */
 function hideAll(page, className, show) {
     for (const elem of page.querySelectorAll('.' + className)) {
         if (show) {
@@ -87,6 +120,13 @@ function hideAll(page, className, show) {
     }
 }
 
+/**
+ * 获取上下文菜单选项配置
+ * @param {Object} item - 媒体项目对象
+ * @param {Object} user - 用户对象
+ * @param {HTMLElement} button - 触发菜单的按钮元素
+ * @returns {Object} 上下文菜单配置对象
+ */
 function getContextMenuOptions(item, user, button) {
     return {
         item: item,
@@ -105,6 +145,12 @@ function getContextMenuOptions(item, user, button) {
     };
 }
 
+/**
+ * 生成节目时间表的 HTML
+ * @param {Array} items - 节目项目数组
+ * @param {string} action - 点击项目时的操作,默认为 'none'
+ * @returns {string} 列表视图的 HTML 字符串
+ */
 function getProgramScheduleHtml(items, action = 'none') {
     return listView.getListViewHtml({
         items: items,
@@ -121,11 +167,23 @@ function getProgramScheduleHtml(items, action = 'none') {
     });
 }
 
+/**
+ * 获取页面中选中的媒体源
+ * @param {HTMLElement} page - 页面容器元素
+ * @param {Array} mediaSources - 媒体源数组
+ * @returns {Object} 选中的媒体源对象
+ */
 function getSelectedMediaSource(page, mediaSources) {
     const mediaSourceId = page.querySelector('.selectSource').value;
     return mediaSources.filter(m => m.Id === mediaSourceId)[0];
 }
 
+/**
+ * 渲染系列定时器的录制计划
+ * @param {HTMLElement} page - 页面容器元素
+ * @param {Object} apiClient - API 客户端实例
+ * @param {string} seriesTimerId - 系列定时器 ID
+ */
 function renderSeriesTimerSchedule(page, apiClient, seriesTimerId) {
     apiClient.getLiveTvTimers({
         UserId: apiClient.getCurrentUserId(),
@@ -147,6 +205,14 @@ function renderSeriesTimerSchedule(page, apiClient, seriesTimerId) {
     });
 }
 
+/**
+ * 渲染定时器编辑器
+ * 用于显示或隐藏取消录制的按钮
+ * @param {HTMLElement} page - 页面容器元素
+ * @param {Object} item - 媒体项目对象
+ * @param {Object} apiClient - API 客户端实例
+ * @param {Object} user - 用户对象
+ */
 function renderTimerEditor(page, item, apiClient, user) {
     if (item.Type !== 'Recording' || !user.Policy.EnableLiveTvManagement || !item.TimerId || item.Status !== 'InProgress') {
         hideAll(page, 'btnCancelTimer');
@@ -156,6 +222,14 @@ function renderTimerEditor(page, item, apiClient, user) {
     hideAll(page, 'btnCancelTimer', true);
 }
 
+/**
+ * 渲染系列定时器编辑器
+ * 用于管理系列节目的录制设置
+ * @param {HTMLElement} page - 页面容器元素
+ * @param {Object} item - 媒体项目对象
+ * @param {Object} apiClient - API 客户端实例
+ * @param {Object} user - 用户对象
+ */
 function renderSeriesTimerEditor(page, item, apiClient, user) {
     if (item.Type !== 'SeriesTimer') {
         hideAll(page, 'btnCancelSeriesTimer');
@@ -179,6 +253,14 @@ function renderSeriesTimerEditor(page, item, apiClient, user) {
     hideAll(page, 'btnCancelSeriesTimer');
 }
 
+/**
+ * 渲染媒体轨道选择界面
+ * 包括视频、音频和字幕轨道的选择
+ * @param {HTMLElement} page - 页面容器元素
+ * @param {Object} instance - 控制器实例
+ * @param {Object} item - 媒体项目对象
+ * @param {boolean} forceReload - 是否强制重新加载
+ */
 function renderTrackSelections(page, instance, item, forceReload) {
     const select = page.querySelector('.selectSource');
 
@@ -218,6 +300,12 @@ function renderTrackSelections(page, instance, item, forceReload) {
     }
 }
 
+/**
+ * 渲染视频轨道选择器
+ * 显示可用的视频轨道及其分辨率和编解码器信息
+ * @param {HTMLElement} page - 页面容器元素
+ * @param {Array} mediaSources - 媒体源数组
+ */
 function renderVideoSelections(page, mediaSources) {
     const mediaSource = getSelectedMediaSource(page, mediaSources);
 
@@ -252,6 +340,12 @@ function renderVideoSelections(page, mediaSources) {
     }
 }
 
+/**
+ * 渲染音频轨道选择器
+ * 显示可用的音频轨道列表，并根据默认音频流索引选中对应项
+ * @param {HTMLElement} page - 页面容器元素
+ * @param {Array} mediaSources - 媒体源数组
+ */
 function renderAudioSelections(page, mediaSources) {
     const mediaSource = getSelectedMediaSource(page, mediaSources);
 
@@ -280,6 +374,12 @@ function renderAudioSelections(page, mediaSources) {
     }
 }
 
+/**
+ * 渲染字幕轨道选择器
+ * 显示可用的字幕轨道列表，包括"关闭"选项，并根据默认字幕流索引选中对应项
+ * @param {HTMLElement} page - 页面容器元素
+ * @param {Array} mediaSources - 媒体源数组
+ */
 function renderSubtitleSelections(page, mediaSources) {
     const mediaSource = getSelectedMediaSource(page, mediaSources);
 
@@ -310,6 +410,13 @@ function renderSubtitleSelections(page, mediaSources) {
     }
 }
 
+/**
+ * 重新加载播放按钮
+ * 根据项目类型和播放状态显示或隐藏播放、重播、混播等按钮
+ * @param {HTMLElement} page - 页面容器元素
+ * @param {Object} item - 媒体项目对象
+ * @returns {boolean} 返回项目是否可播放
+ */
 function reloadPlayButtons(page, item) {
     let canPlay = false;
 
@@ -354,6 +461,12 @@ function reloadPlayButtons(page, item) {
     return canPlay;
 }
 
+/**
+ * 重新加载用户数据相关按钮
+ * 包括已播放状态按钮和评分按钮
+ * @param {HTMLElement} page - 页面容器元素
+ * @param {Object} item - 媒体项目对象
+ */
 function reloadUserDataButtons(page, item) {
     let i;
     let length;
@@ -386,6 +499,13 @@ function reloadUserDataButtons(page, item) {
     }
 }
 
+/**
+ * 生成艺术家链接的 HTML
+ * @param {Array} artists - 艺术家对象数组
+ * @param {string} serverId - 服务器 ID
+ * @param {string} context - 应用上下文
+ * @returns {string} 艺术家链接的 HTML 字符串
+ */
 function getArtistLinksHtml(artists, serverId, context) {
     const html = [];
     const numberOfArtists = artists.length;
@@ -490,6 +610,11 @@ function renderName(item, container, context) {
     }
 }
 
+/**
+ * 设置预告片按钮的可见性
+ * @param {HTMLElement} page - 页面容器元素
+ * @param {Object} item - 媒体项目对象
+ */
 function setTrailerButtonVisibility(page, item) {
     if ((item.LocalTrailerCount || item.RemoteTrailers?.length) && playbackManager.getSupportedCommands().indexOf('PlayTrailers') !== -1) {
         hideAll(page, 'btnPlayTrailer', true);
@@ -498,6 +623,12 @@ function setTrailerButtonVisibility(page, item) {
     }
 }
 
+/**
+ * 渲染页面背景图
+ * 根据设备类型和用户设置显示或隐藏背景
+ * @param {HTMLElement} page - 页面容器元素
+ * @param {Object} item - 媒体项目对象
+ */
 function renderBackdrop(page, item) {
     if (!layoutManager.mobile && dom.getWindowSize().innerWidth >= 1000) {
         const isBannerEnabled = !layoutManager.tv && userSettings.detailsBanner();
@@ -510,6 +641,13 @@ function renderBackdrop(page, item) {
     }
 }
 
+/**
+ * 渲染页面头部背景图
+ * @param {HTMLElement} page - 页面容器元素
+ * @param {Object} item - 媒体项目对象
+ * @param {Object} apiClient - API 客户端实例
+ * @returns {boolean} 是否有背景图
+ */
 function renderHeaderBackdrop(page, item, apiClient) {
     // Details banner is disabled in user settings
     if (!userSettings.detailsBanner()) {
@@ -536,6 +674,15 @@ function renderHeaderBackdrop(page, item, apiClient) {
     return hasbackdrop;
 }
 
+/**
+ * 从项目数据重新加载页面内容
+ * 这是整个页面渲染的主函数
+ * @param {Object} instance - 控制器实例
+ * @param {HTMLElement} page - 页面容器元素
+ * @param {Object} params - 路由参数对象
+ * @param {Object} item - 媒体项目对象
+ * @param {Object} user - 用户对象
+ */
 function reloadFromItem(instance, page, params, item, user) {
     const apiClient = ServerConnections.getApiClient(item.ServerId);
 
@@ -658,6 +805,13 @@ function reloadFromItem(instance, page, params, item, user) {
     autoFocus(page);
 }
 
+/**
+ * 获取项目 Logo 图片 URL
+ * @param {Object} item - 媒体项目对象
+ * @param {Object} apiClient - API 客户端实例
+ * @param {Object} options - 图片选项
+ * @returns {string|null} Logo 图片 URL 或 null
+ */
 function logoImageUrl(item, apiClient, options) {
     options = options || {};
     options.type = 'Logo';
@@ -675,6 +829,12 @@ function logoImageUrl(item, apiClient, options) {
     return null;
 }
 
+/**
+ * 渲染项目 Logo 图片
+ * @param {HTMLElement} page - 页面容器元素
+ * @param {Object} item - 媒体项目对象
+ * @param {Object} apiClient - API 客户端实例
+ */
 function renderLogo(page, item, apiClient) {
     const detailLogo = page.querySelector('.detailLogo');
 
@@ -688,6 +848,14 @@ function renderLogo(page, item, apiClient) {
     }
 }
 
+/**
+ * 显示录制设置字段
+ * 用于电视节目的录制功能
+ * @param {Object} instance - 控制器实例
+ * @param {HTMLElement} page - 页面容器元素
+ * @param {Object} item - 媒体项目对象
+ * @param {Object} user - 用户对象
+ */
 function showRecordingFields(instance, page, item, user) {
     if (!instance.currentRecordingFields) {
         const recordingFieldsElement = page.querySelector('.recordingFields');
@@ -708,6 +876,11 @@ function showRecordingFields(instance, page, item, user) {
     }
 }
 
+/**
+ * 渲染项目的外部链接
+ * @param {HTMLElement} page - 页面容器元素
+ * @param {Object} item - 媒体项目对象
+ */
 function renderLinks(page, item) {
     const externalLinksElem = page.querySelector('.itemExternalLinks');
 
@@ -737,6 +910,13 @@ function renderLinks(page, item) {
     }
 }
 
+/**
+ * 渲染详情页面的项目图片
+ * @param {Object} apiClient - API 客户端实例
+ * @param {HTMLElement} elem - 图片容器元素
+ * @param {Object} item - 媒体项目对象
+ * @param {Object} loader - 图片加载器
+ */
 function renderDetailImage(apiClient, elem, item, loader) {
     const html = buildCardImage(
         apiClient,
@@ -748,6 +928,12 @@ function renderDetailImage(apiClient, elem, item, loader) {
     loader.lazyChildren(elem);
 }
 
+/**
+ * 渲染项目图片
+ * @param {HTMLElement} page - 页面容器元素
+ * @param {Object} item - 媒体项目对象
+ * @param {Object} apiClient - API 客户端实例
+ */
 function renderImage(page, item, apiClient) {
     renderDetailImage(
         apiClient,
@@ -757,6 +943,12 @@ function renderImage(page, item, apiClient) {
     );
 }
 
+/**
+ * 设置人物区域的标题
+ * 根据媒体类型显示不同的标题文本
+ * @param {HTMLElement} page - 页面容器元素
+ * @param {Object} item - 媒体项目对象
+ */
 function setPeopleHeader(page, item) {
     if (item.MediaType == 'Audio' || item.Type == 'MusicAlbum' || item.MediaType == 'Book' || item.MediaType == 'Photo') {
         page.querySelector('#peopleHeader').innerHTML = globalize.translate('People');
@@ -765,6 +957,13 @@ function setPeopleHeader(page, item) {
     }
 }
 
+/**
+ * 渲染下一集区域
+ * 用于显示电视剧的下一集
+ * @param {HTMLElement} page - 页面容器元素
+ * @param {Object} item - 媒体项目对象
+ * @param {Object} user - 用户对象
+ */
 function renderNextUp(page, item, user) {
     const section = page.querySelector('.nextUpSection');
 
@@ -799,6 +998,15 @@ function renderNextUp(page, item, user) {
     });
 }
 
+/**
+ * 设置初始折叠区域的状态
+ * 根据项目类型显示不同的内容区域
+ * @param {HTMLElement} page - 页面容器元素
+ * @param {Object} item - 媒体项目对象
+ * @param {Object} apiClient - API 客户端实例
+ * @param {string} context - 应用上下文
+ * @param {Object} user - 用户对象
+ */
 function setInitialCollapsibleState(page, item, apiClient, context, user) {
     page.querySelector('.collectionItems').innerHTML = '';
 
@@ -861,6 +1069,11 @@ function setInitialCollapsibleState(page, item, apiClient, context, user) {
     }
 }
 
+/**
+ * 切换文本的展开/折叠状态
+ * @param {HTMLElement} clampTarget - 需要切换的文本元素
+ * @param {Event} e - 事件对象
+ */
 function toggleLineClamp(clampTarget, e) {
     const expandButton = e.target;
     const clampClassName = 'detail-clamp-text';
@@ -874,6 +1087,12 @@ function toggleLineClamp(clampTarget, e) {
     }
 }
 
+/**
+ * 渲染项目的描述/简介
+ * 支持 Markdown 格式并提供展开/折叠功能
+ * @param {HTMLElement} page - 页面容器元素
+ * @param {Object} item - 媒体项目对象
+ */
 function renderOverview(page, item) {
     const overviewElements = page.querySelectorAll('.overview');
 
@@ -913,6 +1132,12 @@ function renderOverview(page, item) {
     }
 }
 
+/**
+ * 渲染项目的类型/风格
+ * @param {HTMLElement} page - 页面容器元素
+ * @param {Object} item - 媒体项目对象
+ * @param {string} context - 应用上下文,默认从项目类型推断
+ */
 function renderGenres(page, item, context = inferContext(item)) {
     const genres = item.GenreItems || [];
     const type = context === 'music' ? 'MusicGenre' : 'Genre';
@@ -941,6 +1166,12 @@ function renderGenres(page, item, context = inferContext(item)) {
     }
 }
 
+/**
+ * 渲染编剧信息
+ * @param {HTMLElement} page - 页面容器元素
+ * @param {Object} item - 媒体项目对象
+ * @param {string} context - 应用上下文
+ */
 function renderWriter(page, item, context) {
     const writers = (item.People || []).filter(function (person) {
         return person.Type === 'Writer';
@@ -970,6 +1201,12 @@ function renderWriter(page, item, context) {
     }
 }
 
+/**
+ * 渲染导演信息
+ * @param {HTMLElement} page - 页面容器元素
+ * @param {Object} item - 媒体项目对象
+ * @param {string} context - 应用上下文
+ */
 function renderDirector(page, item, context) {
     const directors = (item.People || []).filter(function (person) {
         return person.Type === 'Director';
@@ -999,6 +1236,12 @@ function renderDirector(page, item, context) {
     }
 }
 
+/**
+ * 渲染制片公司/工作室信息
+ * @param {HTMLElement} page - 页面容器元素
+ * @param {Object} item - 媒体项目对象
+ * @param {string} context - 应用上下文
+ */
 function renderStudio(page, item, context) {
     // The list of studios can be massive for collections of items
     if ([BaseItemKind.BoxSet, BaseItemKind.Playlist].includes(item.Type)) return;
@@ -1025,6 +1268,12 @@ function renderStudio(page, item, context) {
     studiosGroup.classList.toggle('hide', !studios.length);
 }
 
+/**
+ * 渲染媒体的其他信息
+ * 包括分辨率、时长、编解码器等技术信息
+ * @param {HTMLElement} page - 页面容器元素
+ * @param {Object} item - 媒体项目对象
+ */
 function renderMiscInfo(page, item) {
     const primaryItemMiscInfo = page.querySelectorAll('.itemMiscInfo-primary');
 
@@ -1057,6 +1306,11 @@ function renderMiscInfo(page, item) {
     }
 }
 
+/**
+ * 渲染项目的宣传语
+ * @param {HTMLElement} page - 页面容器元素
+ * @param {Object} item - 媒体项目对象
+ */
 function renderTagline(page, item) {
     const taglineElement = page.querySelector('.tagline');
 
@@ -1068,6 +1322,14 @@ function renderTagline(page, item) {
     }
 }
 
+/**
+ * 渲染项目的所有详细信息
+ * 这是一个综合性函数,调用多个子渲染函数
+ * @param {HTMLElement} page - 页面容器元素
+ * @param {Object} item - 媒体项目对象
+ * @param {Object} apiClient - API 客户端实例
+ * @param {string} context - 应用上下文
+ */
 function renderDetails(page, item, apiClient, context) {
     renderSimilarItems(page, item, context);
     renderMoreFromSeason(page, item, apiClient);
@@ -1092,10 +1354,21 @@ function renderDetails(page, item, apiClient, context) {
     renderSeriesAirTime(page, item);
 }
 
+/**
+ * 判断是否启用水平滚动
+ * @returns {boolean} 在移动设备上且屏幕宽度小于 1000px 时返回 true
+ */
 function enableScrollX() {
     return browser.mobile && window.screen.availWidth <= 1000;
 }
 
+/**
+ * 渲染歌词容器
+ * 仅对音频项目显示歌词，从 API 获取歌词数据并显示
+ * @param {HTMLElement} view - 页面视图元素
+ * @param {Object} item - 媒体项目对象
+ * @param {Object} apiClient - API 客户端实例
+ */
 function renderLyricsContainer(view, item, apiClient) {
     const lyricContainer = view.querySelector('.lyricsContainer');
     if (lyricContainer && item.HasLyrics) {
@@ -1103,7 +1376,7 @@ function renderLyricsContainer(view, item, apiClient) {
             lyricContainer.classList.add('hide');
             return;
         }
-        //get lyrics
+        // 获取歌词
         apiClient.ajax({
             url: apiClient.getUrl('Audio/' + item.Id + '/Lyrics'),
             type: 'GET',
@@ -1128,6 +1401,13 @@ function renderLyricsContainer(view, item, apiClient) {
     }
 }
 
+/**
+ * 渲染“本季更多剧集”区域
+ * 显示当前剧集所在季的其他剧集，并自动滚动到当前剧集位置
+ * @param {HTMLElement} view - 页面视图元素
+ * @param {Object} item - 当前剧集项目对象
+ * @param {Object} apiClient - API 客户端实例
+ */
 function renderMoreFromSeason(view, item, apiClient) {
     const section = view.querySelector('.moreFromSeasonSection');
 
@@ -1174,6 +1454,13 @@ function renderMoreFromSeason(view, item, apiClient) {
     }
 }
 
+/**
+ * 渲染“来自该艺术家的更多作品”区域
+ * 显示相同艺术家的其他音乐专辑
+ * @param {HTMLElement} view - 页面视图元素
+ * @param {Object} item - 当前项目对象（音乐艺术家/音频/音乐专辑）
+ * @param {Object} apiClient - API 客户端实例
+ */
 function renderMoreFromArtist(view, item, apiClient) {
     const section = view.querySelector('.moreFromArtistSection');
 
@@ -1229,6 +1516,13 @@ function renderMoreFromArtist(view, item, apiClient) {
     }
 }
 
+/**
+ * 渲染相似项目区域
+ * 基于当前项目的特征显示相似的媒体内容
+ * @param {HTMLElement} page - 页面容器元素
+ * @param {Object} item - 当前媒体项目对象
+ * @param {string} context - 应用上下文
+ */
 function renderSimilarItems(page, item, context) {
     const similarCollapsible = page.querySelector('#similarCollapsible');
 
@@ -1279,6 +1573,12 @@ function renderSimilarItems(page, item, context) {
     }
 }
 
+/**
+ * 渲染电视剧播出时间
+ * 显示电视剧的播出时间表（星期几和具体时间）
+ * @param {HTMLElement} page - 页面容器元素
+ * @param {Object} item - 电视剧项目对象
+ */
 function renderSeriesAirTime(page, item) {
     const seriesAirTime = page.querySelector('#seriesAirTime');
     if (item.Type != 'Series') {
@@ -1307,6 +1607,12 @@ function renderSeriesAirTime(page, item) {
     }
 }
 
+/**
+ * 渲染项目标签
+ * 显示项目的所有标签，每个标签为一个可点击的链接
+ * @param {HTMLElement} page - 页面容器元素
+ * @param {Object} item - 媒体项目对象
+ */
 function renderTags(page, item) {
     const itemTags = page.querySelector('.itemTags');
     const tagElements = [];
@@ -1337,6 +1643,12 @@ function renderTags(page, item) {
     }
 }
 
+/**
+ * 渲染项目的子项目
+ * 根据项目类型显示季、剧集、音轨等
+ * @param {HTMLElement} page - 页面容器元素
+ * @param {Object} item - 媒体项目对象
+ */
 function renderChildren(page, item) {
     let fields = 'ItemCounts,PrimaryImageAspectRatio,CanDelete,MediaSourceCount';
     const query = {
@@ -1520,18 +1832,35 @@ function renderChildren(page, item) {
     }
 }
 
+/**
+ * 按名称渲染项目列表
+ * 用于类型、艺术家、工作室等特殊类型页面
+ * @param {HTMLElement} page - 页面容器元素
+ * @param {Object} item - 媒体项目对象
+ */
 function renderItemsByName(page, item) {
     import('../../scripts/itemsByName').then(({ default: ItemsByName }) => {
         ItemsByName.renderItems(page, item);
     });
 }
 
+/**
+ * 渲染播放列表中的项目
+ * @param {HTMLElement} page - 页面容器元素
+ * @param {Object} item - 播放列表项目对象
+ */
 function renderPlaylistItems(page, item) {
     import('../../scripts/playlistViewer').then(({ default: PlaylistViewer }) => {
         PlaylistViewer.render(page, item);
     });
 }
 
+/**
+ * 渲染频道的节目列表
+ * 按日期分组显示电视频道的节目指南
+ * @param {HTMLElement} page - 页面容器元素
+ * @param {Object} result - API 返回的节目列表结果
+ */
 function renderProgramsForChannel(page, result) {
     let html = '';
     let currentItems = [];
@@ -1588,6 +1917,13 @@ function renderProgramsForChannel(page, result) {
     page.querySelector('.programGuide').innerHTML = html;
 }
 
+/**
+ * 渲染频道节目指南
+ * 如果项目是电视频道，则显示该频道的节目安排
+ * @param {HTMLElement} page - 页面容器元素
+ * @param {Object} apiClient - API 客户端实例
+ * @param {Object} item - 媒体项目对象
+ */
 function renderChannelGuide(page, apiClient, item) {
     if (item.Type === 'TvChannel') {
         page.querySelector('.programGuideSection').classList.remove('hide');
@@ -1606,6 +1942,12 @@ function renderChannelGuide(page, apiClient, item) {
     }
 }
 
+/**
+ * 渲染电视剧的播出时间表
+ * 显示电视剧在直播电视中的未来播出安排
+ * @param {HTMLElement} page - 页面容器元素
+ * @param {Object} item - 电视剧项目对象
+ */
 function renderSeriesSchedule(page, item) {
     const apiClient = ServerConnections.getApiClient(item.ServerId);
     apiClient.getLiveTvPrograms({
@@ -1634,6 +1976,132 @@ function renderSeriesSchedule(page, item) {
     });
 }
 
+/**
+ * 渲染频道的节目列表
+ * 按日期分组显示电视频道的节目指南
+ * @param {HTMLElement} page - 页面容器元素
+ * @param {Object} result - API 返回的节目列表结果
+ */
+function renderProgramsForChannel(page, result) {
+    let html = '';
+    let currentItems = [];
+    let currentStartDate = null;
+
+    for (let i = 0, length = result.Items.length; i < length; i++) {
+        const item = result.Items[i];
+        const itemStartDate = datetime.parseISO8601Date(item.StartDate);
+
+        if (!(currentStartDate && currentStartDate.toDateString() === itemStartDate.toDateString())) {
+            if (currentItems.length) {
+                html += '<div class="verticalSection verticalDetailSection">';
+                html += '<h2 class="sectionTitle padded-left">' + datetime.toLocaleDateString(currentStartDate, {
+                    weekday: 'long',
+                    month: 'long',
+                    day: 'numeric'
+                }) + '</h2>';
+                html += '<div is="emby-itemscontainer" class="vertical-list padded-left padded-right">' + listView.getListViewHtml({
+                    items: currentItems,
+                    enableUserDataButtons: false,
+                    showParentTitle: true,
+                    image: false,
+                    showProgramTime: true,
+                    mediaInfo: false,
+                    parentTitleWithTitle: true
+                }) + '</div></div>';
+            }
+
+            currentStartDate = itemStartDate;
+            currentItems = [];
+        }
+
+        currentItems.push(item);
+    }
+
+    if (currentItems.length) {
+        html += '<div class="verticalSection verticalDetailSection">';
+        html += '<h2 class="sectionTitle padded-left">' + datetime.toLocaleDateString(currentStartDate, {
+            weekday: 'long',
+            month: 'long',
+            day: 'numeric'
+        }) + '</h2>';
+        html += '<div is="emby-itemscontainer" class="vertical-list padded-left padded-right">' + listView.getListViewHtml({
+            items: currentItems,
+            enableUserDataButtons: false,
+            showParentTitle: true,
+            image: false,
+            showProgramTime: true,
+            mediaInfo: false,
+            parentTitleWithTitle: true
+        }) + '</div></div>';
+    }
+
+    page.querySelector('.programGuide').innerHTML = html;
+}
+
+/**
+ * 渲染频道节目指南
+ * 如果项目是电视频道,则显示该频道的节目安排
+ * @param {HTMLElement} page - 页面容器元素
+ * @param {Object} apiClient - API 客户端实例
+ * @param {Object} item - 媒体项目对象
+ */
+function renderChannelGuide(page, apiClient, item) {
+    if (item.Type === 'TvChannel') {
+        page.querySelector('.programGuideSection').classList.remove('hide');
+        apiClient.getLiveTvPrograms({
+            ChannelIds: item.Id,
+            UserId: apiClient.getCurrentUserId(),
+            HasAired: false,
+            SortBy: 'StartDate',
+            EnableTotalRecordCount: false,
+            EnableImages: false,
+            ImageTypeLimit: 0,
+            EnableUserData: false
+        }).then(function (result) {
+            renderProgramsForChannel(page, result);
+        });
+    }
+}
+
+/**
+ * 渲染电视剧的播出时间表
+ * 显示电视剧在直播电视中的未来播出安排
+ * @param {HTMLElement} page - 页面容器元素
+ * @param {Object} item - 电视剧项目对象
+ */
+function renderSeriesSchedule(page, item) {
+    const apiClient = ServerConnections.getApiClient(item.ServerId);
+    apiClient.getLiveTvPrograms({
+        UserId: apiClient.getCurrentUserId(),
+        ImageTypeLimit: 1,
+        HasAired: false,
+        SortBy: 'StartDate',
+        EnableTotalRecordCount: false,
+        Limit: 50,
+        EnableUserData: false,
+        Fields: 'ChannelInfo,ChannelImage',
+        LibrarySeriesId: item.Id
+    }).then(function (result) {
+        if (result.Items.length) {
+            page.querySelector('#seriesScheduleSection').classList.remove('hide');
+        } else {
+            page.querySelector('#seriesScheduleSection').classList.add('hide');
+        }
+
+        const html = getProgramScheduleHtml(result.Items, 'programdialog');
+        const scheduleTab = page.querySelector('#seriesScheduleList');
+        scheduleTab.innerHTML = html;
+        imageLoader.lazyChildren(scheduleTab);
+
+        loading.hide();
+    });
+}
+
+/**
+ * 根据项目类型推断应用上下文
+ * @param {Object} item - 媒体项目对象
+ * @returns {string|null} 上下文字符串: 'movies', 'tvshows', 'music', 'livetv' 或 null
+ */
 function inferContext(item) {
     if (item.Type === 'Movie' || item.Type === 'BoxSet') {
         return 'movies';
@@ -1654,6 +2122,13 @@ function inferContext(item) {
     return null;
 }
 
+/**
+ * 按集合项目类型过滤项目
+ * 根据媒体类型或项目类型将项目分为匹配和不匹配两组
+ * @param {Array} items - 待过滤的项目数组
+ * @param {Object} typeInfo - 类型信息对象,包含 mediaType 或 type 属性
+ * @returns {Array} 包含两个数组的数组: [匹配的项目, 不匹配的项目]
+ */
 function filterItemsByCollectionItemType(items, typeInfo) {
     const filteredItems = [];
     const leftoverItems = [];
@@ -1667,6 +2142,12 @@ function filterItemsByCollectionItemType(items, typeInfo) {
     return [filteredItems, leftoverItems];
 }
 
+/**
+ * 检查集合中是否有可播放的项目
+ * 遍历项目数组,检查是否至少有一个项目可以播放
+ * @param {Array} items - 项目数组
+ * @returns {boolean} 如果至少有一个项目可播放则返回 true,否则返回 false
+ */
 function canPlaySomeItemInCollection(items) {
     let i = 0;
 
@@ -1679,6 +2160,14 @@ function canPlaySomeItemInCollection(items) {
     return false;
 }
 
+/**
+ * 渲染集合中的项目
+ * 按类型分组显示集合中的项目,并为每个容器设置刷新回调
+ * @param {HTMLElement} page - 页面容器元素
+ * @param {Object} parentItem - 父级集合项目对象
+ * @param {Array} types - 类型定义数组,每个类型包含 name 和 type/mediaType
+ * @param {Array} items - 集合中的项目数组
+ */
 function renderCollectionItems(page, parentItem, types, items) {
     page.querySelector('.collectionItems').classList.remove('hide');
     page.querySelector('.collectionItems').innerHTML = '';
@@ -1728,6 +2217,14 @@ function renderCollectionItems(page, parentItem, types, items) {
     autoFocus(page);
 }
 
+/**
+ * 渲染集合中特定类型的项目
+ * 为集合中的特定类型项目创建卡片布局并添加到页面
+ * @param {HTMLElement} page - 页面容器元素
+ * @param {Object} parentItem - 父级集合项目对象
+ * @param {Object} type - 类型信息对象,包含 name、type 和 mediaType
+ * @param {Array} items - 该类型的项目数组
+ */
 function renderCollectionItemType(page, parentItem, type, items) {
     let html = '';
     html += '<div class="verticalSection">';
@@ -1758,6 +2255,13 @@ function renderCollectionItemType(page, parentItem, type, items) {
     imageLoader.lazyChildren(collectionItems.lastChild);
 }
 
+/**
+ * 渲染音乐视频列表
+ * 显示与音乐艺术家或音乐专辑相关的音乐视频
+ * @param {HTMLElement} page - 页面容器元素
+ * @param {Object} item - 音乐项目对象（MusicArtist 或 MusicAlbum）
+ * @param {Object} user - 用户对象
+ */
 function renderMusicVideos(page, item, user) {
     const request = {
         SortBy: 'SortName',
@@ -1785,6 +2289,13 @@ function renderMusicVideos(page, item, user) {
     });
 }
 
+/**
+ * 渲染额外的视频部分
+ * 显示多部分视频的其他部分（如电影的多个文件）
+ * @param {HTMLElement} page - 页面容器元素
+ * @param {Object} item - 媒体项目对象
+ * @param {Object} user - 用户对象
+ */
 function renderAdditionalParts(page, item, user) {
     ServerConnections.getApiClient(item.ServerId).getAdditionalVideoParts(user.Id, item.Id).then(function (result) {
         if (result.Items.length) {
@@ -1798,6 +2309,11 @@ function renderAdditionalParts(page, item, user) {
     });
 }
 
+/**
+ * 渲染场景/章节信息
+ * @param {HTMLElement} page - 页面容器元素
+ * @param {Object} item - 媒体项目对象
+ */
 function renderScenes(page, item) {
     let chapters = item.Chapters || [];
 
@@ -1822,6 +2338,11 @@ function renderScenes(page, item) {
     }
 }
 
+/**
+ * 生成视频项目的 HTML
+ * @param {Array} items - 视频项目数组
+ * @returns {string} 卡片 HTML 字符串
+ */
 function getVideosHtml(items) {
     return cardBuilder.getCardsHtml({
         items: items,
@@ -1834,6 +2355,12 @@ function getVideosHtml(items) {
     });
 }
 
+/**
+ * 渲染特别内容/花絮
+ * @param {HTMLElement} page - 页面容器元素
+ * @param {Object} item - 媒体项目对象
+ * @param {Object} user - 用户对象
+ */
 function renderSpecials(page, item, user) {
     ServerConnections.getApiClient(item.ServerId).getSpecialFeatures(user.Id, item.Id).then(function (specials) {
         const specialsContent = page.querySelector('#specialsContent');
@@ -1842,6 +2369,12 @@ function renderSpecials(page, item, user) {
     });
 }
 
+/**
+ * 渲染演员表
+ * @param {HTMLElement} page - 页面容器元素
+ * @param {Object} item - 媒体项目对象
+ * @param {Array} people - 演员列表
+ */
 function renderCast(page, item, people) {
     if (!people.length) {
         page.querySelector('#castCollapsible').classList.add('hide');
@@ -1862,6 +2395,12 @@ function renderCast(page, item, people) {
     });
 }
 
+/**
+ * 渲染客串演员
+ * @param {HTMLElement} page - 页面容器元素
+ * @param {Object} item - 媒体项目对象
+ * @param {Array} people - 客串演员列表
+ */
 function renderGuestCast(page, item, people) {
     if (!people.length) {
         page.querySelector('#guestCastCollapsible').classList.add('hide');
@@ -1882,6 +2421,11 @@ function renderGuestCast(page, item, people) {
     });
 }
 
+/**
+ * 项目详情页面类
+ * 用于管理项目详情页面的公共方法
+ * @constructor
+ */
 function ItemDetailPage() {
     const self = this;
     self.setInitialCollapsibleState = setInitialCollapsibleState;
@@ -1890,6 +2434,13 @@ function ItemDetailPage() {
     self.renderGuestCast = renderGuestCast;
 }
 
+/**
+ * 为指定选择器的所有元素绑定事件
+ * @param {HTMLElement} view - 视图容器元素
+ * @param {string} selector - CSS 选择器
+ * @param {string} eventName - 事件名称
+ * @param {Function} fn - 事件处理函数
+ */
 function bindAll(view, selector, eventName, fn) {
     const elems = view.querySelectorAll(selector);
 
@@ -1898,6 +2449,12 @@ function bindAll(view, selector, eventName, fn) {
     }
 }
 
+/**
+ * 轨道选择表单提交事件处理
+ * 阻止表单的默认提交行为，避免页面刷新
+ * @param {Event} e - 表单提交事件对象
+ * @returns {boolean} 始终返回 false 以阻止默认行为
+ */
 function onTrackSelectionsSubmit(e) {
     e.preventDefault();
     return false;
@@ -1905,11 +2462,27 @@ function onTrackSelectionsSubmit(e) {
 
 window.ItemDetailPage = new ItemDetailPage();
 
+/**
+ * 项目详情页面控制器的默认导出
+ * @param {HTMLElement} view - 页面视图元素
+ * @param {Object} params - 路由参数对象
+ * @returns {void}
+ */
 export default function (view, params) {
+    /**
+     * 获取 API 客户端实例
+     * @returns {Object} API 客户端
+     */
     function getApiClient() {
         return params.serverId ? ServerConnections.getApiClient(params.serverId) : ApiClient;
     }
 
+    /**
+     * 重新加载页面数据
+     * @param {Object} instance - 控制器实例
+     * @param {HTMLElement} page - 页面容器元素
+     * @param {Object} pageParams - 页面参数
+     */
     function reload(instance, page, pageParams) {
         loading.show();
 
@@ -1923,6 +2496,14 @@ export default function (view, params) {
         });
     }
 
+    /**
+     * 分离媒体版本
+     * 将组合的媒体源分离成单独的项目
+     * @param {Object} instance - 控制器实例
+     * @param {HTMLElement} page - 页面容器元素
+     * @param {Object} apiClient - API 客户端实例
+     * @param {Object} pageParams - 页面参数
+     */
     function splitVersions(instance, page, apiClient, pageParams) {
         confirm('Are you sure you wish to split the media sources into separate items?', 'Split Media Apart').then(function () {
             loading.show();
@@ -1936,6 +2517,12 @@ export default function (view, params) {
         });
     }
 
+    /**
+     * 获取播放选项配置
+     * 从页面上的选择器中获取媒体源、音轨、字幕等播放设置
+     * @param {number} startPosition - 播放起始位置（以 ticks 为单位）
+     * @returns {Object} 播放选项对象，包含媒体源ID、音轨索引、字幕索引等
+     */
     function getPlayOptions(startPosition) {
         const audioStreamIndex = view.querySelector('.selectAudio').value || null;
         return {
@@ -1946,16 +2533,29 @@ export default function (view, params) {
         };
     }
 
+    /**
+     * 播放项目
+     * @param {Object} item - 媒体项目对象
+     * @param {number} startPosition - 开始播放位置（ticks）
+     */
     function playItem(item, startPosition) {
         const playOptions = getPlayOptions(startPosition);
         playOptions.items = [item];
         playbackManager.play(playOptions);
     }
 
+    /**
+     * 播放预告片
+     */
     function playTrailer() {
         playbackManager.playTrailers(currentItem);
     }
 
+    /**
+     * 播放当前项目
+     * @param {HTMLElement} button - 触发播放的按钮元素
+     * @param {string} mode - 播放模式（'resume' 表示继续播放）
+     */
     function playCurrentItem(button, mode) {
         const item = currentItem;
 
@@ -1972,6 +2572,10 @@ export default function (view, params) {
         playItem(item, item.UserData && mode === 'resume' ? item.UserData.PlaybackPositionTicks : 0);
     }
 
+    /**
+     * 播放按钮点击事件处理
+     * 获取按钮的 data-action 属性并执行相应的播放操作
+     */
     function onPlayClick() {
         let actionElem = this;
         let action = actionElem.getAttribute('data-action');
@@ -1984,14 +2588,26 @@ export default function (view, params) {
         playCurrentItem(actionElem, action);
     }
 
+    /**
+     * 即时混音按钮点击事件处理
+     * 基于当前项目创建即时混音播放列表
+     */
     function onInstantMixClick() {
         playbackManager.instantMix(currentItem);
     }
 
+    /**
+     * 随机播放按钮点击事件处理
+     * 随机播放当前项目的内容
+     */
     function onShuffleClick() {
         playbackManager.shuffle(currentItem);
     }
 
+    /**
+     * 取消系列定时器按钮点击事件处理
+     * 取消电视剧集的录制定时器并返回直播电视页面
+     */
     function onCancelSeriesTimerClick() {
         import('../../components/recordingcreator/recordinghelper').then(({ default: recordingHelper }) => {
             recordingHelper.cancelSeriesTimerWithConfirmation(currentItem.Id, currentItem.ServerId).then(function () {
@@ -2000,6 +2616,10 @@ export default function (view, params) {
         });
     }
 
+    /**
+     * 取消定时器按钮点击事件处理
+     * 取消单个录制定时器并重新加载页面
+     */
     function onCancelTimerClick() {
         import('../../components/recordingcreator/recordinghelper').then(({ default: recordingHelper }) => {
             recordingHelper.cancelTimer(ServerConnections.getApiClient(currentItem.ServerId), currentItem.TimerId).then(function () {
@@ -2008,10 +2628,17 @@ export default function (view, params) {
         });
     }
 
+    /**
+     * 播放预告片按钮点击事件处理
+     */
     function onPlayTrailerClick() {
         playTrailer();
     }
 
+    /**
+     * 下载按钮点击事件处理
+     * 下载当前媒体项目到本地设备
+     */
     function onDownloadClick() {
         const downloadHref = getApiClient().getItemDownloadUrl(currentItem.Id);
         download([{
@@ -2024,6 +2651,12 @@ export default function (view, params) {
         }]);
     }
 
+    /**
+     * 更多命令按钮点击事件处理
+     * 显示上下文菜单并处理用户选择的操作结果
+     * - 如果项目被删除，导航到父级项目或首页
+     * - 如果项目被更新，重新加载当前页面
+     */
     function onMoreCommandsClick() {
         const button = this;
         let selectedItem = view.querySelector('.selectSource').value || currentItem.Id;
@@ -2053,11 +2686,21 @@ export default function (view, params) {
         });
     }
 
+    /**
+     * 播放器变化事件处理
+     * 当播放器状态改变时更新轨道选择和预告片按钮的可见性
+     */
     function onPlayerChange() {
         renderTrackSelections(view, self, currentItem);
         setTrailerButtonVisibility(view, currentItem);
     }
 
+    /**
+     * WebSocket 消息处理
+     * 监听用户数据变化并更新页面
+     * @param {Event} e - 事件对象
+     * @param {Object} data - 消息数据
+     */
     function onWebSocketMessage(e, data) {
         const msg = data;
         const apiClient = getApiClient();
@@ -2079,6 +2722,10 @@ export default function (view, params) {
     let currentItem;
     const self = this;
 
+    /**
+     * 初始化页面
+     * 设置事件监听器和视图生命周期事件
+     */
     function init() {
         const apiClient = getApiClient();
 
@@ -2134,6 +2781,10 @@ export default function (view, params) {
         });
     }
 
+    /**
+     * 更新媒体信息
+     * 根据选中的媒体源更新技术信息
+     */
     function updateMiscInfo() {
         const selectedMediaSource = getSelectedMediaSource(view, self._currentPlaybackMediaSources);
         renderMiscInfo(view, {
