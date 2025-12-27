@@ -2,16 +2,30 @@ import dom from '../scripts/dom';
 import scrollManager from './scrollManager';
 
 const scopes = [];
+/**
+ * 添加一个新的作用域元素。
+ * @param {HTMLElement} elem
+ */
 function pushScope(elem) {
     scopes.push(elem);
 }
 
+/**
+ * 弹出当前作用域。
+ */
 function popScope() {
     if (scopes.length) {
         scopes.length -= 1;
     }
 }
 
+/**
+ * 自动聚焦视图内的元素。
+ * @param {HTMLElement} view
+ * @param {boolean} defaultToFirst
+ * @param {boolean} findAutoFocusElement
+ * @returns {HTMLElement|null} 聚焦的元素或 null。
+ */
 function autoFocus(view, defaultToFirst, findAutoFocusElement) {
     let element;
     if (findAutoFocusElement !== false) {
@@ -34,6 +48,10 @@ function autoFocus(view, defaultToFirst, findAutoFocusElement) {
     return null;
 }
 
+/**
+ * 聚焦一个元素。
+ * @param {HTMLElement} element
+ */
 function focus(element) {
     try {
         element.focus({
@@ -53,11 +71,22 @@ const focusableQuery = focusableTagNames.map(function (t) {
     return t + ':not([tabindex="-1"]):not(:disabled)';
 }).join(',') + ',.focusable';
 
+/**
+ * 检查元素是否可聚焦。
+ * @param {HTMLElement} elem
+ * @returns {boolean}
+ */
 function isFocusable(elem) {
     return focusableTagNames.indexOf(elem.tagName) !== -1
             || (elem.classList?.contains('focusable'));
 }
 
+/**
+ * 标准化可聚焦元素。
+ * @param {HTMLElement} elem
+ * @param {HTMLElement} originalElement
+ * @returns {HTMLElement}
+ */
 function normalizeFocusable(elem, originalElement) {
     if (elem) {
         const tagName = elem.tagName;
@@ -69,6 +98,11 @@ function normalizeFocusable(elem, originalElement) {
     return elem;
 }
 
+/**
+ * 获取元素的可聚焦父级。
+ * @param {HTMLElement} elem
+ * @returns {HTMLElement}
+ */
 function focusableParent(elem) {
     const originalElement = elem;
 
@@ -85,13 +119,21 @@ function focusableParent(elem) {
     return normalizeFocusable(elem, originalElement);
 }
 
-// Determines if a focusable element can be focused at a given point in time
+/**
+ * 确定可聚焦元素在给定时间点是否可以被聚焦。
+ * @param {HTMLElement} elem
+ * @returns {boolean}
+ */
 function isCurrentlyFocusableInternal(elem) {
     // http://stackoverflow.com/questions/19669786/check-if-element-is-visible-in-dom
     return elem.offsetParent !== null;
 }
 
-// Determines if a focusable element can be focused at a given point in time
+/**
+ * 确定可聚焦元素在给定时间点是否可以被聚焦。
+ * @param {HTMLElement} elem
+ * @returns {boolean}
+ */
 function isCurrentlyFocusable(elem) {
     if (!elem.classList?.contains('focusable')) {
         if (elem.disabled) {
@@ -116,10 +158,21 @@ function isCurrentlyFocusable(elem) {
     return isCurrentlyFocusableInternal(elem);
 }
 
+/**
+ * 获取默认作用域。
+ * @returns {HTMLElement}
+ */
 function getDefaultScope() {
     return scopes[0] || document.body;
 }
 
+/**
+ * 获取父级内的可聚焦元素。
+ * @param {HTMLElement} parent
+ * @param {number} limit
+ * @param {string} excludeClass
+ * @returns {Array<HTMLElement>}
+ */
 function getFocusableElements(parent, limit, excludeClass) {
     const elems = (parent || getDefaultScope()).querySelectorAll(focusableQuery);
     const focusableElements = [];
@@ -143,6 +196,12 @@ function getFocusableElements(parent, limit, excludeClass) {
     return focusableElements;
 }
 
+/**
+ * 检查元素是否为聚焦容器。
+ * @param {HTMLElement} elem
+ * @param {number} direction
+ * @returns {boolean}
+ */
 function isFocusContainer(elem, direction) {
     if (focusableContainerTagNames.indexOf(elem.tagName) !== -1) {
         return true;
@@ -184,6 +243,12 @@ function isFocusContainer(elem, direction) {
     return false;
 }
 
+/**
+ * 获取元素的聚焦容器。
+ * @param {HTMLElement} elem
+ * @param {number} direction
+ * @returns {HTMLElement}
+ */
 function getFocusContainer(elem, direction) {
     while (!isFocusContainer(elem, direction)) {
         elem = elem.parentNode;
@@ -196,6 +261,11 @@ function getFocusContainer(elem, direction) {
     return elem;
 }
 
+/**
+ * 获取元素的偏移量。
+ * @param {HTMLElement} elem
+ * @returns {Object}
+ */
 function getOffset(elem) {
     let box;
 
@@ -230,6 +300,13 @@ function getOffset(elem) {
     return box;
 }
 
+/**
+ * 在指定方向上导航焦点。
+ * @param {HTMLElement} activeElement
+ * @param {number} direction 0: left, 1: right, 2: up, 3: down
+ * @param {HTMLElement} container
+ * @param {NodeList|Array} focusableElements
+ */
 function nav(activeElement, direction, container, focusableElements) {
     activeElement = activeElement || document.activeElement;
 
@@ -384,21 +461,46 @@ function nav(activeElement, direction, container, focusableElements) {
     }
 }
 
+/**
+ * 检查两个范围是否相交。
+ * @param {number} a1
+ * @param {number} a2
+ * @param {number} b1
+ * @param {number} b2
+ * @returns {boolean}
+ */
 function intersectsInternal(a1, a2, b1, b2) {
     return (b1 >= a1 && b1 <= a2) || (b2 >= a1 && b2 <= a2);
 }
 
+/**
+ * 检查两个范围是否相交（双向）。
+ * @param {number} a1
+ * @param {number} a2
+ * @param {number} b1
+ * @param {number} b2
+ * @returns {boolean}
+ */
 function intersects(a1, a2, b1, b2) {
     // eslint-disable-next-line sonarjs/arguments-order
     return intersectsInternal(a1, a2, b1, b2) || intersectsInternal(b1, b2, a1, a2);
 }
 
+/**
+ * 发送文本到活动元素。
+ * @param {string} text
+ */
 function sendText(text) {
     const elem = document.activeElement;
 
     elem.value = text;
 }
 
+/**
+ * 聚焦容器中的第一个可聚焦元素。
+ * @param {HTMLElement} container
+ * @param {string} focusableSelector
+ */
 function focusFirst(container, focusableSelector) {
     const elems = container.querySelectorAll(focusableSelector);
 
@@ -412,6 +514,11 @@ function focusFirst(container, focusableSelector) {
     }
 }
 
+/**
+ * 聚焦容器中的最后一个可聚焦元素。
+ * @param {HTMLElement} container
+ * @param {string} focusableSelector
+ */
 function focusLast(container, focusableSelector) {
     const elems = [].slice.call(container.querySelectorAll(focusableSelector), 0).reverse();
 
@@ -425,6 +532,13 @@ function focusLast(container, focusableSelector) {
     }
 }
 
+/**
+ * 按偏移量移动焦点。
+ * @param {HTMLElement} sourceElement
+ * @param {HTMLElement} container
+ * @param {string} focusableSelector
+ * @param {number} offset
+ */
 function moveFocus(sourceElement, container, focusableSelector, offset) {
     const elems = container.querySelectorAll(focusableSelector);
     const list = [];

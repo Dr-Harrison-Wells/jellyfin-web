@@ -1,5 +1,7 @@
+// 引入用于转义 HTML 的库
 import escapeHtml from 'escape-html';
 
+// 引入项目相关的常量、工具和依赖
 import { AppFeature } from 'constants/appFeature';
 import { appHost } from '../apphost';
 import dialogHelper from '../dialogHelper/dialogHelper';
@@ -23,60 +25,69 @@ import toast from '../toast/toast';
 import confirm from '../confirm/confirm';
 import template from './subtitleeditor.template.html';
 
+// 当前操作的媒体项和字幕变更标记
 let currentItem;
 let hasChanges;
 
+/**
+ * 下载远程字幕
+ * @param {HTMLElement} context - 当前对话框上下文
+ * @param {string} id - 字幕ID
+ */
 function downloadRemoteSubtitles(context, id) {
+    // 构造下载字幕的 API 地址
     const url = 'Items/' + currentItem.Id + '/RemoteSearch/Subtitles/' + id;
 
+    // 获取对应服务器的 API 客户端
     const apiClient = ServerConnections.getApiClient(currentItem.ServerId);
     apiClient.ajax({
-
         type: 'POST',
         url: apiClient.getUrl(url)
-
     }).then(function () {
-        hasChanges = true;
-
-        toast(globalize.translate('MessageDownloadQueued'));
-
-        focusManager.autoFocus(context);
+        hasChanges = true; // 标记有变更
+        toast(globalize.translate('MessageDownloadQueued')); // 显示提示
+        focusManager.autoFocus(context); // 自动聚焦
     });
 }
 
+/**
+ * 删除本地字幕
+ * @param {HTMLElement} context - 当前对话框上下文
+ * @param {number} index - 字幕索引
+ */
 function deleteLocalSubtitle(context, index) {
     const msg = globalize.translate('MessageAreYouSureDeleteSubtitles');
 
     confirm({
-
         title: globalize.translate('ConfirmDeletion'),
         text: msg,
         confirmText: globalize.translate('Delete'),
         primary: 'delete'
-
     }).then(function () {
-        loading.show();
-
+        loading.show(); // 显示加载动画
         const itemId = currentItem.Id;
         const url = 'Videos/' + itemId + '/Subtitles/' + index;
-
         const apiClient = ServerConnections.getApiClient(currentItem.ServerId);
-
         apiClient.ajax({
-
             type: 'DELETE',
             url: apiClient.getUrl(url)
-
         }).then(function () {
-            hasChanges = true;
-            reload(context, apiClient, itemId);
+            hasChanges = true; // 标记有变更
+            reload(context, apiClient, itemId); // 重新加载字幕列表
         });
     });
 }
 
+/**
+ * 填充字幕列表到界面
+ * @param {HTMLElement} context - 当前对话框上下文
+ * @param {Object} item - 当前媒体项
+ */
 function fillSubtitleList(context, item) {
+    // 获取所有媒体流
     const streams = item.MediaStreams || [];
 
+    // 过滤出字幕流
     const subs = streams.filter(function (s) {
         return s.Type === 'Subtitle';
     });
@@ -84,59 +95,46 @@ function fillSubtitleList(context, item) {
     let html = '';
 
     if (subs.length) {
+        // 有字幕时渲染字幕列表
         html += '<h2>' + globalize.translate('MySubtitles') + '</h2>';
-
         html += '<div>';
-
         html += subs.map(function (s) {
             let itemHtml = '';
-
             const tagName = layoutManager.tv ? 'button' : 'div';
             let className = layoutManager.tv && s.Path ? 'listItem listItem-border btnDelete' : 'listItem listItem-border';
-
             if (layoutManager.tv) {
                 className += ' listItem-focusscale listItem-button';
             }
-
             className += ' listItem-noborder';
-
             itemHtml += '<' + tagName + ' class="' + className + '" data-index="' + s.Index + '">';
-
             itemHtml += '<span class="listItemIcon material-icons closed_caption" aria-hidden="true"></span>';
-
             itemHtml += '<div class="listItemBody two-line">';
-
             itemHtml += '<div>';
             itemHtml += escapeHtml(s.DisplayTitle || '');
             itemHtml += '</div>';
-
             if (s.Path) {
                 itemHtml += '<div class="secondary listItemBodyText">' + escapeHtml(s.Path) + '</div>';
             }
-
             itemHtml += '</a>';
             itemHtml += '</div>';
-
             if (!layoutManager.tv && s.Path) {
                 itemHtml += '<button is="paper-icon-button-light" data-index="' + s.Index + '" title="' + globalize.translate('Delete') + '" class="btnDelete listItemButton"><span class="material-icons delete" aria-hidden="true"></span></button>';
             }
-
             itemHtml += '</' + tagName + '>';
-
             return itemHtml;
         }).join('');
-
         html += '</div>';
     }
 
+    // 获取字幕列表 DOM 元素
     const elem = context.querySelector('.subtitleList');
 
     if (subs.length) {
-        elem.classList.remove('hide');
+        elem.classList.remove('hide'); // 显示字幕列表
     } else {
-        elem.classList.add('hide');
+        elem.classList.add('hide'); // 隐藏字幕列表
     }
-    elem.innerHTML = html;
+    elem.innerHTML = html; // 渲染 HTML
 }
 
 function fillLanguages(context, apiClient, languages) {

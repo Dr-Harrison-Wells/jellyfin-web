@@ -1,5 +1,5 @@
 /**
- * Module for performing auto-focus.
+ * 用于执行自动聚焦的模块。
  * @module components/autoFocuser
  */
 
@@ -7,25 +7,26 @@ import focusManager from './focusManager';
 import layoutManager from './layoutManager';
 
 /**
-     * Previously selected element.
+     * 之前选中的元素。
      */
 let activeElement;
 
 /**
-     * Returns _true_ if AutoFocuser is enabled.
+     * 如果启用了自动聚焦，则返回 _true_。
      */
 export function isEnabled() {
     return layoutManager.tv;
 }
 
 /**
-     * Start AutoFocuser.
+     * 启动自动聚焦。
      */
 export function enable() {
     if (!isEnabled()) {
         return;
     }
 
+    // 监听 focusin 事件以记录当前活动的元素
     window.addEventListener('focusin', function (e) {
         activeElement = e.target;
     });
@@ -34,9 +35,9 @@ export function enable() {
 }
 
 /**
-     * Set focus on a suitable element, taking into account the previously selected.
-     * @param {HTMLElement | null} [container] - Element to limit scope.
-     * @returns {HTMLElement} Focused element.
+     * 在合适的元素上设置焦点，同时考虑到之前选中的元素。
+     * @param {HTMLElement | null} [container] - 限制范围的元素。
+     * @returns {HTMLElement} 聚焦的元素。
      */
 export function autoFocus(container) {
     if (!isEnabled()) {
@@ -48,7 +49,7 @@ export function autoFocus(container) {
     let candidates = [];
 
     if (activeElement) {
-        // These elements are recreated
+        // 这些元素会被重新创建
         if (activeElement.classList.contains('btnPreviousPage')) {
             candidates.push(container.querySelector('.btnPreviousPage'));
             candidates.push(container.querySelector('.btnNextPage'));
@@ -62,10 +63,12 @@ export function autoFocus(container) {
         candidates.push(activeElement);
     }
 
+    // 添加播放按钮作为候选
     candidates = candidates.concat(Array.from(container.querySelectorAll('.btnPlay')));
 
     let focusedElement;
 
+    // 尝试聚焦候选列表中的第一个可聚焦元素
     candidates.every(function (element) {
         if (focusManager.isCurrentlyFocusable(element)) {
             focusManager.focus(element);
@@ -77,7 +80,7 @@ export function autoFocus(container) {
     });
 
     if (!focusedElement) {
-        // FIXME: Multiple itemsContainers
+        // FIXME: 多个 itemsContainers
         const itemsContainer = container.querySelector('.itemsContainer');
 
         if (itemsContainer) {

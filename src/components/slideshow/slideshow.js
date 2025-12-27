@@ -1,40 +1,59 @@
 /**
+ * 图片查看器组件
  * Image viewer component
  * @module components/slideshow/slideshow
  */
+// 导入应用功能常量
 import { AppFeature } from 'constants/appFeature';
+// 导入对话框辅助工具
 import dialogHelper from '../dialogHelper/dialogHelper';
+// 导入服务器连接管理器
 import { ServerConnections } from 'lib/jellyfin-apiclient';
+// 导入输入管理器
 import inputManager from '../../scripts/inputManager';
+// 导入布局管理器
 import layoutManager from '../layoutManager';
+// 导入焦点管理器
 import focusManager from '../focusManager';
+// 导入浏览器工具
 import browser from '../../scripts/browser';
+// 导入应用主机
 import { appHost } from '../apphost';
+// 导入 DOM 工具
 import dom from '../../scripts/dom';
 
+// 导入样式文件
 import './style.scss';
+// 导入 Material Design 图标字体
 import 'material-design-icons-iconfont';
+// 导入图标按钮组件
 import '../../elements/emby-button/paper-icon-button-light';
+// 导入全屏插件
 import screenfull from 'screenfull';
+// 导入随机整数工具函数
 import { randomInt } from '../../utils/number.ts';
 
 /**
+ * 过渡动画结束事件的名称
  * Name of transition event.
  */
 const transitionEndEventName = dom.whichTransitionEvent();
 
 /**
+ * 是否使用虚拟图片来修复缩放后图片模糊的问题
+ * 至少 WebKit 不会恢复缩放图片的质量
  * Flag to use fake image to fix blurry zoomed image.
  * At least WebKit doesn't restore quality for zoomed images.
  */
 const useFakeZoomImage = browser.safari;
 
 /**
+ * 从 API 获取项目的图片 URL
  * Retrieves an item's image URL from the API.
- * @param {object|string} item - Item used to generate the image URL.
- * @param {object} options - Options of the image.
- * @param {object} apiClient - API client instance used to retrieve the image.
- * @returns {null|string} URL of the item's image.
+ * @param {object|string} item - 用于生成图片 URL 的项目
+ * @param {object} options - 图片选项
+ * @param {object} apiClient - 用于检索图片的 API 客户端实例
+ * @returns {null|string} 项目图片的 URL
  */
 function getImageUrl(item, options, apiClient) {
     options = options || {};
@@ -58,16 +77,18 @@ function getImageUrl(item, options, apiClient) {
 }
 
 /**
+ * 从 API 获取背景图片的 URL
  * Retrieves a backdrop's image URL from the API.
- * @param {object} item - Item used to generate the image URL.
- * @param {object} options - Options of the image.
- * @param {object} apiClient - API client instance used to retrieve the image.
- * @returns {null|string} URL of the item's backdrop.
+ * @param {object} item - 用于生成图片 URL 的项目
+ * @param {object} options - 图片选项
+ * @param {object} apiClient - 用于检索图片的 API 客户端实例
+ * @returns {null|string} 项目背景图片的 URL
  */
 function getBackdropImageUrl(item, options, apiClient) {
     options = options || {};
     options.type = options.type || 'Backdrop';
 
+    // 如果不调整大小，则获取原始图片
     // If not resizing, get the original image
     if (!options.maxWidth && !options.width && !options.maxHeight && !options.height && !options.fillWidth && !options.fillHeight) {
         options.quality = 100;
@@ -83,9 +104,11 @@ function getBackdropImageUrl(item, options, apiClient) {
 }
 
 /**
+ * 将项目的图片请求分发到相应的处理器
  * Dispatches a request for an item's image to its respective handler.
- * @param {object} item - Item used to generate the image URL.
- * @returns {string} URL of the item's image.
+ * @param {object} item - 用于生成图片 URL 的项目
+ * @param {object} user - 用户对象
+ * @returns {string} 项目图片的 URL
  */
 function getImgUrl(item, user) {
     const apiClient = ServerConnections.getApiClient(item.ServerId);
@@ -103,12 +126,13 @@ function getImgUrl(item, user) {
 }
 
 /**
+ * 使用指定的图标、类和属性生成按钮
  * Generates a button using the specified icon, classes and properties.
- * @param {string} icon - Name of the material icon on the button
- * @param {string} cssClass - CSS classes to assign to the button
- * @param {boolean} canFocus - Flag to set the tabindex attribute on the button to -1.
- * @param {boolean} autoFocus - Flag to set the autofocus attribute on the button.
- * @returns {string} The HTML markup of the button.
+ * @param {string} icon - 按钮上的 Material 图标名称
+ * @param {string} cssClass - 分配给按钮的 CSS 类
+ * @param {boolean} canFocus - 是否将按钮的 tabindex 属性设置为 -1
+ * @param {boolean} autoFocus - 是否在按钮上设置 autofocus 属性
+ * @returns {string} 按钮的 HTML 标记
  */
 function getIcon(icon, cssClass, canFocus, autoFocus) {
     const tabIndex = canFocus ? '' : ' tabindex="-1"';
@@ -117,8 +141,9 @@ function getIcon(icon, cssClass, canFocus, autoFocus) {
 }
 
 /**
+ * 设置视口元标签以启用或禁用用户缩放
  * Sets the viewport meta tag to enable or disable scaling by the user.
- * @param {boolean} scalable - Flag to set the scalability of the viewport.
+ * @param {boolean} scalable - 设置视口可缩放性的标志
  */
 function setUserScalable(scalable) {
     try {
@@ -130,20 +155,21 @@ function setUserScalable(scalable) {
 
 export default function (options) {
     const self = this;
-    /** Initialized instance of Swiper. */
+    /** 已初始化的 Swiper 实例 / Initialized instance of Swiper. */
     let swiperInstance;
-    /** Initialized instance of the dialog containing the Swiper instance. */
+    /** 包含 Swiper 实例的对话框的已初始化实例 / Initialized instance of the dialog containing the Swiper instance. */
     let dialog;
-    /** Options of the slideshow components */
+    /** 幻灯片组件的选项 / Options of the slideshow components */
     let currentOptions;
-    /** ID of the timeout used to hide the OSD. */
+    /** 用于隐藏 OSD 的超时 ID / ID of the timeout used to hide the OSD. */
     let hideTimeout;
-    /** Last coordinates of the mouse pointer. */
+    /** 鼠标指针的最后坐标 / Last coordinates of the mouse pointer. */
     let lastMouseMoveData;
 
     /**
+     * 创建对话框和 OSD 的 HTML 标记
      * Creates the HTML markup for the dialog and the OSD.
-     * @param {Object} options - Options used to create the dialog and slideshow.
+     * @param {Object} slideshowOptions - 用于创建对话框和幻灯片的选项
      */
     function createElements(slideshowOptions) {
         currentOptions = slideshowOptions;
@@ -276,6 +302,7 @@ export default function (options) {
     }
 
     /**
+     * 处理自动播放开始时的 OSD 变化
      * Handles OSD changes when the autoplay is started.
      */
     function onAutoplayStart() {
@@ -286,6 +313,7 @@ export default function (options) {
     }
 
     /**
+     * 处理自动播放停止时的 OSD 变化
      * Handles OSD changes when the autoplay is stopped.
      */
     function onAutoplayStop() {
@@ -296,7 +324,12 @@ export default function (options) {
     }
 
     /**
+     * 处理缩放变化
      * Handles zoom changes.
+     * @param {object} swiper - Swiper 实例
+     * @param {number} scale - 缩放比例
+     * @param {HTMLElement} imageEl - 图片元素
+     * @param {HTMLElement} slideEl - 幻灯片元素
      */
     function onZoomChange(swiper, scale, imageEl, slideEl) {
         const zoomImage = slideEl.querySelector('.swiper-zoom-fakeimg');
@@ -306,6 +339,7 @@ export default function (options) {
 
             if (scale > 1) {
                 if (zoomImage.classList.contains('swiper-zoom-fakeimg-hidden')) {
+                    // 等待 Swiper 样式变化
                     // Await for Swiper style changes
                     setTimeout(() => {
                         const callback = () => {
@@ -313,6 +347,8 @@ export default function (options) {
                             zoomImage.classList.remove('swiper-zoom-fakeimg-hidden');
                         };
 
+                        // Swiper 为自动缩放设置 'transition-duration: 300ms'
+                        // 为触摸缩放设置 'transition-duration: 0s'
                         // Swiper set 'transition-duration: 300ms' for auto zoom
                         // and 'transition-duration: 0s' for touch zoom
                         const transitionDuration = parseFloat(imageEl.style.transitionDuration.replace(/[a-z]/i, ''));
@@ -331,9 +367,10 @@ export default function (options) {
     }
 
     /**
+     * 初始化 Swiper 实例并绑定相关事件
      * Initializes the Swiper instance and binds the relevant events.
-     * @param {HTMLElement} dialog - Element containing the dialog.
-     * @param {Object} options - Options used to initialize the Swiper instance.
+     * @param {HTMLElement} dialogElement - 包含对话框的元素
+     * @param {Object} swiperOptions - 用于初始化 Swiper 实例的选项
      */
     function loadSwiper(dialogElement, swiperOptions) {
         let slides;
@@ -350,6 +387,7 @@ export default function (options) {
         import('swiper/bundle').then(({ Swiper }) => {
             swiperInstance = new Swiper(dialogElement.querySelector('.slideshowSwiperContainer'), {
                 direction: 'horizontal',
+                // 由于虚拟幻灯片选项不支持循环，因此禁用循环
                 // Loop is disabled due to the virtual slides option not supporting it.
                 loop: false,
                 zoom: {
@@ -369,6 +407,7 @@ export default function (options) {
                     nextEl: '.btnSlideshowNext',
                     prevEl: '.btnSlideshowPrevious'
                 },
+                // 虚拟幻灯片减少大型库的内存消耗，同时允许预加载图片
                 // Virtual slides reduce memory consumption for large libraries while allowing preloading of images;
                 virtual: {
                     slides: slides,
@@ -391,9 +430,10 @@ export default function (options) {
     }
 
     /**
+     * 为项目或幻灯片渲染幻灯片的 HTML 标记
      * Renders the HTML markup of a slide for an item or a slide.
-     * @param {Object} item - The item used to render the slide.
-     * @returns {string} The HTML markup of the slide.
+     * @param {Object} item - 用于渲染幻灯片的项目
+     * @returns {string} 幻灯片的 HTML 标记
      */
     function getSwiperSlideHtml(item) {
         if (currentOptions.slides) {
@@ -404,9 +444,10 @@ export default function (options) {
     }
 
     /**
+     * 为项目渲染幻灯片的 HTML 标记
      * Renders the HTML markup of a slide for an item.
-     * @param {Object} item - Item used to generate the slide.
-     * @returns {string} The HTML markup of the slide.
+     * @param {Object} item - 用于生成幻灯片的项目
+     * @returns {string} 幻灯片的 HTML 标记
      */
     function getSwiperSlideHtmlFromItem(item) {
         return getSwiperSlideHtmlFromSlide({
@@ -417,9 +458,10 @@ export default function (options) {
     }
 
     /**
+     * 为幻灯片对象渲染幻灯片的 HTML 标记
      * Renders the HTML markup of a slide for a slide object.
-     * @param {Object} item - Slide object used to generate the slide.
-     * @returns {string} The HTML markup of the slide.
+     * @param {Object} item - 用于生成幻灯片的幻灯片对象
+     * @returns {string} 幻灯片的 HTML 标记
      */
     function getSwiperSlideHtmlFromSlide(item) {
         let html = '';
@@ -452,8 +494,9 @@ export default function (options) {
     }
 
     /**
+     * 获取当前显示的幻灯片的信息
      * Fetches the information of the currently displayed slide.
-     * @returns {null|{itemId: string, shareUrl: string, serverId: string, url: string}} Object containing the information of the currently displayed slide.
+     * @returns {null|{itemId: string, shareUrl: string, serverId: string, url: string}} 包含当前显示幻灯片信息的对象
      */
     function getCurrentImageInfo() {
         if (swiperInstance) {
@@ -474,6 +517,7 @@ export default function (options) {
     }
 
     /**
+     * 开始下载当前显示的幻灯片
      * Starts a download for the currently displayed slide.
      */
     function download() {
@@ -485,6 +529,7 @@ export default function (options) {
     }
 
     /**
+     * 使用浏览器内置的分享功能分享当前显示的幻灯片
      * Shares the currently displayed slide using the browser's built-in sharing feature.
      */
     function share() {
@@ -496,6 +541,7 @@ export default function (options) {
     }
 
     /**
+     * 使用 screenfull 插件进入全屏
      * Goes to fullscreen using screenfull plugin
      */
     function fullscreen() {
@@ -504,6 +550,7 @@ export default function (options) {
     }
 
     /**
+     * 使用 screenfull 插件退出全屏
      * Exits fullscreen using screenfull plugin
      */
     function fullscreenExit() {
@@ -512,8 +559,9 @@ export default function (options) {
     }
 
     /**
+     * 更新全屏按钮的显示
      * Updates the display of fullscreen buttons
-     * @param {boolean} isFullscreen - Whether the wanted state of buttons is fullscreen or not
+     * @param {boolean} isFullscreen - 按钮所需的状态是否为全屏
      */
     function toggleFullscreenButtons(isFullscreen) {
         const btnFullscreen = dialog.querySelector('.btnFullscreen');
@@ -527,6 +575,7 @@ export default function (options) {
     }
 
     /**
+     * 启动 Swiper 实例的自动播放功能
      * Starts the autoplay feature of the Swiper instance.
      */
     function play() {
@@ -536,6 +585,7 @@ export default function (options) {
     }
 
     /**
+     * 暂停 Swiper 实例的自动播放功能
      * Pauses the autoplay feature of the Swiper instance;
      */
     function pause() {
@@ -545,6 +595,7 @@ export default function (options) {
     }
 
     /**
+     * 切换 Swiper 实例的自动播放功能
      * Toggles the autoplay feature of the Swiper instance.
      */
     function playPause() {
@@ -557,9 +608,11 @@ export default function (options) {
     }
 
     /**
+     * 关闭对话框并销毁 Swiper 实例
      * Closes the dialog and destroys the Swiper instance.
      */
     function onDialogClosed() {
+        // 退出全屏
         // Exits fullscreen
         fullscreenExit();
 
@@ -575,6 +628,7 @@ export default function (options) {
     }
 
     /**
+     * 显示 OSD（屏幕显示）
      * Shows the OSD.
      */
     function showOsd() {
@@ -596,6 +650,7 @@ export default function (options) {
     }
 
     /**
+     * 隐藏 OSD（屏幕显示）
      * Hides the OSD.
      */
     function hideOsd() {
@@ -615,6 +670,7 @@ export default function (options) {
     }
 
     /**
+     * 启动用于自动隐藏 OSD 的计时器
      * Starts the timer used to automatically hide the OSD.
      */
     function startHideTimer() {
@@ -623,6 +679,7 @@ export default function (options) {
     }
 
     /**
+     * 停止用于自动隐藏 OSD 的计时器
      * Stops the timer used to automatically hide the OSD.
      */
     function stopHideTimer() {
@@ -633,11 +690,11 @@ export default function (options) {
     }
 
     /**
-     *
-     * @param {string} hiddenPosition - Position of the hidden element compared to when it's visible ('down', 'up', 'left', 'right')
-     * @param {*} fadingOut - Whether it is fading out or in
-     * @param {HTMLElement} element - Element to fade.
-     * @returns {Array} Array of keyframes
+     * 生成滑动动画的关键帧
+     * @param {string} hiddenPosition - 隐藏元素相对于可见时的位置（'down'、'up'、'left'、'right'）
+     * @param {*} fadingOut - 是淡出还是淡入
+     * @param {HTMLElement} element - 要淡化的元素
+     * @returns {Array} 关键帧数组
      */
     function keyframesSlide(hiddenPosition, fadingOut, element) {
         const visible = { transform: 'translate(0,0)', opacity: '1' };
@@ -653,9 +710,10 @@ export default function (options) {
     }
 
     /**
+     * 通过滑动显示元素
      * Shows the element by sliding it into view.
-     * @param {HTMLElement} element - Element to show.
-     * @param {string} slideFrom - Direction to slide from ('down', 'up', 'left', 'right')
+     * @param {HTMLElement} element - 要显示的元素
+     * @param {string} slideFrom - 滑入的方向（'down'、'up'、'left'、'right'）
      */
     function slideToShow(element, slideFrom) {
         if (!element.classList.contains('hide')) {
@@ -682,9 +740,10 @@ export default function (options) {
     }
 
     /**
+     * 通过滑动隐藏元素
      * Hides the element by sliding it out of view.
-     * @param {HTMLElement} element - Element to hide.
-     * @param {string} slideInto - Direction to slide into ('down', 'up', 'left', 'right')
+     * @param {HTMLElement} element - 要隐藏的元素
+     * @param {string} slideInto - 滑出的方向（'down'、'up'、'left'、'right'）
      */
     function slideToHide(element, slideInto) {
         if (element.classList.contains('hide')) {
@@ -708,8 +767,9 @@ export default function (options) {
     }
 
     /**
+     * 在移动鼠标指针或触摸屏幕时显示 OSD
      * Shows the OSD when moving the mouse pointer or touching the screen.
-     * @param {Event} event - Pointer movement event.
+     * @param {Event} event - 指针移动事件
      */
     function onPointerMove(event) {
         const pointerType = event.pointerType || (layoutManager.mobile ? 'touch' : 'mouse');
@@ -727,6 +787,7 @@ export default function (options) {
                 return;
             }
 
+            // 如果坐标相同，说明没有移动
             // if coord are same, it didn't move
             if (Math.abs(eventX - obj.x) < 10 && Math.abs(eventY - obj.y) < 10) {
                 return;
@@ -739,8 +800,9 @@ export default function (options) {
     }
 
     /**
+     * 将键盘输入分发到相应的处理器
      * Dispatches keyboard inputs to their proper handlers.
-     * @param {Event} event - Keyboard input event.
+     * @param {Event} event - 键盘输入事件
      */
     function onInputCommand(event) {
         switch (event.detail.command) {
@@ -766,8 +828,9 @@ export default function (options) {
     }
 
     /**
+     * 构造点击事件处理器
      * Constructs click event handler.
-     * @param {function|null|undefined} callback - Click event handler.
+     * @param {function|null|undefined} callback - 点击事件处理器
      */
     function getClickHandler(callback) {
         return (e) => {
@@ -777,6 +840,7 @@ export default function (options) {
     }
 
     /**
+     * 显示幻灯片组件
      * Shows the slideshow component.
      */
     self.show = function () {
@@ -784,6 +848,7 @@ export default function (options) {
     };
 
     /**
+     * 隐藏幻灯片元素
      * Hides the slideshow element.
      */
     self.hide = function () {
