@@ -20,8 +20,10 @@ import toast from '../toast/toast';
 import template from './homeScreenSettings.template.html';
 import { LibraryTab } from '../../types/libraryTab.ts';
 
+// 可配置的首页区块数量（对应模板中的 10 个 section 下拉框）
 const numConfigurableSections = 10;
 
+// 渲染“文件夹分组”列表（GroupedFolders）：从后端返回的可分组视图中生成复选框
 function renderViews(page, user, result) {
     let folderHtml = '';
 
@@ -48,6 +50,8 @@ function renderViews(page, user, result) {
     page.querySelector('.folderGroupList').innerHTML = folderHtml;
 }
 
+// 根据媒体库类型生成“默认进入页面(landing screen)”的可选项
+// 说明：不同 CollectionType 支持的 Tab 不同；默认项用 isDefault 标记
 function getLandingScreenOptions(type) {
     const list = [];
 
@@ -160,6 +164,8 @@ function getLandingScreenOptions(type) {
     return list;
 }
 
+// 将 landing screen 可选项转为 <option> 列表
+// userValue 为空时选择默认项；默认项的 value 为空字符串（与保存逻辑保持一致）
 function getLandingScreenOptionsHtml(type, userValue) {
     return getLandingScreenOptions(type).map(o => {
         const selected = userValue === o.value || (o.isDefault && !userValue);
@@ -170,6 +176,7 @@ function getLandingScreenOptionsHtml(type, userValue) {
     }).join('');
 }
 
+// 渲染“我的媒体”顶部视图排序（OrderedViews）：生成可上下移动的列表项
 function renderViewOrder(context, user, result) {
     let html = '';
 
@@ -199,6 +206,8 @@ function renderViewOrder(context, user, result) {
     context.querySelector('.viewOrderList').innerHTML = html;
 }
 
+// 将用户的首页区块配置写回到 UI（10 个 section 下拉框 + TV 首页入口下拉框）
+// 约定：当用户值与默认值一致时，下拉框显示为空字符串（代表“使用默认”）
 function updateHomeSectionValues(context, userSettings) {
     for (let i = 1; i <= numConfigurableSections; i++) {
         const select = context.querySelector(`#selectHomeSection${i}`);
@@ -220,6 +229,10 @@ function updateHomeSectionValues(context, userSettings) {
     context.querySelector('.selectTVHomeScreen').value = userSettings.get('tvhome') || '';
 }
 
+// 生成“按媒体库单独设置”的 HTML
+// - DisplayInMyMedia：是否在“我的媒体”显示
+// - DisplayInOtherHomeScreenSections：是否参与“最新/继续观看”等首页区块
+// - LabelDefaultScreen：该库点击进入时默认打开哪个 Tab（Movies/Shows/Albums/...）
 function getPerLibrarySettingsHtml(item, user, userSettings) {
     let html = '';
 
@@ -276,6 +289,7 @@ function getPerLibrarySettingsHtml(item, user, userSettings) {
     return html;
 }
 
+// 渲染“按媒体库单独设置”区域（循环每个视图/库生成一段配置 UI）
 function renderPerLibrarySettings(context, user, userViews, userSettings) {
     const elem = context.querySelector('.perLibrarySettings');
     let html = '';
@@ -287,6 +301,10 @@ function renderPerLibrarySettings(context, user, userViews, userSettings) {
     elem.innerHTML = html;
 }
 
+// 拉取数据并回填表单：
+// - 用户配置（HidePlayedInLatest / 排除列表 / 分组文件夹等）
+// - 用户可见视图列表（用于排序 & 每库设置）
+// - 分组选项（GroupingOptions，用于“分组文件夹”复选框）
 function loadForm(context, user, userSettings, apiClient) {
     context.querySelector('.chkHidePlayedFromLatest').checked = user.Configuration.HidePlayedInLatest || false;
 
@@ -311,6 +329,7 @@ function loadForm(context, user, userSettings, apiClient) {
     });
 }
 
+// 处理“视图排序”列表中的上下移动按钮
 function onSectionOrderListClick(e) {
     const target = dom.parentWithClass(e.target, 'btnViewItemMove');
 
@@ -339,6 +358,8 @@ function onSectionOrderListClick(e) {
     }
 }
 
+// 收集某一组 checkbox 中 checked 状态与 isChecked 相符的项
+// 用于将 UI 勾选结果转换为后端所需的 ID 数组
 function getCheckboxItems(selector, context, isChecked) {
     const inputs = context.querySelectorAll(selector);
     const list = [];
@@ -352,6 +373,11 @@ function getCheckboxItems(selector, context, isChecked) {
     return list;
 }
 
+// 将 UI 中的设置写入 user.Configuration / userSettings，并提交到服务端
+// 注意：
+// - LatestItemsExcludes / MyMediaExcludes 保存“未勾选”的库 ID
+// - GroupedFolders 保存“已勾选”的库 ID
+// - OrderedViews 保存排序后的 viewId 列表
 function saveUser(context, user, userSettingsInstance, apiClient) {
     user.Configuration.HidePlayedInLatest = context.querySelector('.chkHidePlayedFromLatest').checked;
 
@@ -399,6 +425,7 @@ function saveUser(context, user, userSettingsInstance, apiClient) {
     return apiClient.updateUserConfiguration(user.Id, user.Configuration);
 }
 
+// 保存入口：拉取最新 user 对象后合并并提交，成功后触发 saved 事件
 function save(instance, context, userId, userSettings, apiClient, enableSaveConfirmation) {
     loading.show();
 
@@ -416,6 +443,7 @@ function save(instance, context, userId, userSettings, apiClient, enableSaveConf
     });
 }
 
+// 表单 submit 处理：先确保 userSettings 绑定了 user + apiClient，再执行保存
 function onSubmit(e) {
     const self = this;
     const apiClient = ServerConnections.getApiClient(self.options.serverId);
@@ -434,6 +462,8 @@ function onSubmit(e) {
     return false;
 }
 
+// 当“显示在我的媒体”切换时，联动显示/隐藏“参与首页其他区块”的选项
+// 目的：如果该库不显示在“我的媒体”，则不允许/不展示“最新/推荐”等区块相关勾选
 function onChange(e) {
     const chkIncludeInMyMedia = dom.parentWithClass(e.target, 'chkIncludeInMyMedia');
     if (!chkIncludeInMyMedia) {
@@ -451,6 +481,7 @@ function onChange(e) {
     }
 }
 
+// 将模板注入 DOM，并绑定事件
 function embed(options, self) {
     let workingTemplate = template;
     for (let i = 1; i <= numConfigurableSections; i++) {
@@ -482,6 +513,7 @@ class HomeScreenSettings {
         embed(options, this);
     }
 
+    // 拉取用户数据并渲染表单；autoFocus 用于 TV/遥控场景的默认聚焦
     loadData(autoFocus) {
         const self = this;
         const context = self.options.element;
@@ -505,10 +537,12 @@ class HomeScreenSettings {
         });
     }
 
+    // 对外暴露的提交方法（与表单 submit 逻辑一致）
     submit() {
         onSubmit.call(this);
     }
 
+    // 销毁：释放引用，便于 GC
     destroy() {
         this.options = null;
     }

@@ -19,16 +19,34 @@ import alert from '../alert';
 import confirm from '../confirm/confirm';
 import template from './imageeditor.template.html';
 
+/**
+ * 图片编辑器对话框逻辑（封面/背景图等）：
+ * - 拉取条目图片信息与远程图片提供方
+ * - 渲染图片卡片（Primary/Backdrop/...）
+ * - 支持上传/搜索/删除/移动（Backdrop 可调整顺序）
+ *
+ * 备注：这是基于 DOM 的旧实现，主要通过事件委托绑定交互。
+ */
+
+// TV 模式下会显示焦点样式；性能较弱或 Edge 下禁用 transform 动画以避免卡顿/兼容性问题
 const enableFocusTransform = !browser.slow && !browser.edge;
 
+// 当前正在编辑的条目（在 showEditor/reloadItem 中赋值）
 let currentItem;
+// 本次对话框生命周期内是否发生过变更（用于 close 时 resolve/reject）
 let hasChanges = false;
 
 function getBaseRemoteOptions() {
+    // 获取远程图片提供方（Remote Image Providers）时需要当前条目 Id
+    // 注意：currentItem 在 showEditor/reloadItem 后才会被赋值
     return { itemId: currentItem.Id };
 }
 
 function reload(page, item, focusContext) {
+    // 重新加载入口：
+    // - 如果传入 item：直接用它对应的 ServerId 拉取图片信息
+    // - 如果不传 item：先请求一次 getItem 拿到最新条目（避免图片 tag 过期）
+    // - focusContext：TV 模式下用于把焦点放回到合理位置
     loading.show();
 
     let apiClient;
@@ -45,6 +63,10 @@ function reload(page, item, focusContext) {
 }
 
 function addListeners(container, className, eventName, fn) {
+    // 事件委托：
+    // - 通过 parentWithClass 向上找到目标元素
+    // - 避免给每个动态生成的卡片/按钮逐个绑定监听器
+    // - 保证 render 后的新 DOM 也能响应事件
     container.addEventListener(eventName, function (e) {
         const elem = dom.parentWithClass(e.target, className);
         if (elem) {
@@ -54,6 +76,9 @@ function addListeners(container, className, eventName, fn) {
 }
 
 function reloadItem(page, item, apiClient, focusContext) {
+    // 用最新条目覆盖 currentItem，并拉取：
+    // 1) 远程图片提供方（用于“搜索图片”能力开关）
+    // 2) 该条目的图片信息列表（用于渲染卡片）
     currentItem = item;
 
     apiClient.getRemoteImageProviders(getBaseRemoteOptions()).then(function (providers) {
@@ -91,12 +116,16 @@ function getImageUrl(item, apiClient, type, index, options) {
         options.tag = item.ImageTags[type];
     }
 
-    // For search hints
+    // 通过 tag 提示后端/缓存层（同时用于浏览器缓存命中）：
+    // - Backdrop：使用 BackdropImageTags[index]
+    // - Primary：优先 PrimaryImageTag，否则 fallback 到 ImageTags
+    // - 其他：使用 ImageTags[type]
     return apiClient.getScaledImageUrl(item.Id || item.ItemId, options);
 }
 
 function getCardHtml(image, apiClient, options) {
     // TODO move card creation code to Card component
+    // TODO（中文）：后续可把字符串拼接的卡片渲染迁移到统一的 Card 组件
 
     let html = '';
 
@@ -121,6 +150,10 @@ function getCardHtml(image, apiClient, options) {
         html += '<div class="' + cssClass + '"';
     }
 
+    // 通过 data-* 携带必要上下文，供点击/删除/移动/搜索时读取：
+    // - data-index：当前卡片序号（用于左右移动按钮的可用性判断）
+    // - data-imagetype / data-index：用于 delete/move 请求
+    // - data-providers：用于决定是否显示“搜索”入口
     html += ' data-id="' + currentItem.Id + '" data-serverid="' + apiClient.serverId() + '" data-index="' + options.index + '" data-numimages="' + options.numImages + '" data-imagetype="' + image.ImageType + '" data-providers="' + options.imageProviders.length + '"';
 
     html += '>';
@@ -166,6 +199,7 @@ function getCardHtml(image, apiClient, options) {
                 html += '<button type="button" is="paper-icon-button-light" class="autoSize" disabled title="' + globalize.translate('MoveRight') + '"><span class="material-icons chevron_right" aria-hidden="true"></span></button>';
             }
         } else if (options.imageProviders.length) {
+            // 非 Backdrop：如果存在远程图片提供方，则允许搜索替换图片
             html += '<button type="button" is="paper-icon-button-light" data-imagetype="' + image.ImageType + '" class="btnSearchImages autoSize" title="' + globalize.translate('Search') + '"><span class="material-icons search" aria-hidden="true"></span></button>';
         }
 
@@ -181,6 +215,9 @@ function getCardHtml(image, apiClient, options) {
 }
 
 function deleteImage(context, itemId, type, index, apiClient, enableConfirmation) {
+    // 删除图片：
+    // - enableConfirmation=true 时弹出确认对话框
+    // - 成功后标记 hasChanges，并触发 reload 重新拉取/渲染
     const afterConfirm = function () {
         apiClient.deleteItemImage(itemId, type, index).then(function () {
             hasChanges = true;
@@ -201,6 +238,8 @@ function deleteImage(context, itemId, type, index, apiClient, enableConfirmation
 }
 
 function moveImage(context, apiClient, itemId, type, index, newIndex, focusContext) {
+    // 调整图片顺序：当前仅 Backdrop 会调用（通过 updateItemImageIndex）
+    // focusContext：用于 reload 后在 TV 模式恢复焦点
     apiClient.updateItemImageIndex(itemId, type, index, newIndex).then(function () {
         hasChanges = true;
         reload(context, null, focusContext);
@@ -210,6 +249,10 @@ function moveImage(context, apiClient, itemId, type, index, newIndex, focusConte
 }
 
 function renderImages(page, item, apiClient, images, imageProviders, elem) {
+    // 渲染图片卡片列表：
+    // - 根据窗口宽度动态决定卡片图像尺寸（尽量填充一行）
+    // - TV 模式使用 button 以获得可聚焦/可操作的卡片
+    // - 渲染后对卡片内图片做懒加载
     let html = '';
 
     let imageSize = 300;
@@ -218,6 +261,7 @@ function renderImages(page, item, apiClient, images, imageProviders, elem) {
         imageSize = Math.round(windowSize.innerWidth / 4);
     }
 
+    // TV 模式：卡片本身可点击（ActionSheet），不显示底部按钮
     const tagName = layoutManager.tv ? 'button' : 'div';
     const enableFooterButtons = !layoutManager.tv;
 
@@ -232,6 +276,9 @@ function renderImages(page, item, apiClient, images, imageProviders, elem) {
 }
 
 function renderStandardImages(page, apiClient, item, imageInfos, imageProviders) {
+    // 标准图片：
+    // - 排除 Backdrop（单独分组显示并支持排序）
+    // - 排除 Chapter（章节图片不在此处编辑）
     const images = imageInfos.filter(function (i) {
         return i.ImageType !== 'Backdrop' && i.ImageType !== 'Chapter';
     });
@@ -240,6 +287,7 @@ function renderStandardImages(page, apiClient, item, imageInfos, imageProviders)
 }
 
 function renderBackdrops(page, apiClient, item, imageInfos, imageProviders) {
+    // 背景图：按 ImageIndex 排序，并在无数据时隐藏容器
     const images = imageInfos.filter(function (i) {
         return i.ImageType === 'Backdrop';
     }).sort(function (a, b) {
@@ -255,6 +303,8 @@ function renderBackdrops(page, apiClient, item, imageInfos, imageProviders) {
 }
 
 function showImageDownloader(page, imageType) {
+    // 动态加载图片搜索/下载器（按需加载），避免初始包体增大
+    // 下载/选择完成后会返回 Promise；成功则标记 hasChanges 并 reload
     import('../imageDownloader/imageDownloader').then((ImageDownloader) => {
         ImageDownloader.show(
             currentItem.Id,
@@ -272,6 +322,8 @@ function showImageDownloader(page, imageType) {
 }
 
 function showActionSheet(context, imageCard) {
+    // TV 模式下点击卡片：弹出 action sheet（删除/搜索/左右移动等）
+    // 注意：这里从卡片 data-* 读取 serverId/type/index，避免依赖全局状态以外的 DOM 上下文
     const itemId = imageCard.getAttribute('data-id');
     const serverId = imageCard.getAttribute('data-serverid');
     const apiClient = ServerConnections.getApiClient(serverId);
@@ -339,6 +391,9 @@ function showActionSheet(context, imageCard) {
 }
 
 function initEditor(context, options) {
+    // 初始化对话框内交互：
+    // - 根据宿主能力决定是否显示“上传”入口（FileInput）
+    // - 统一用事件委托绑定上传/搜索/删除/移动等交互
     const uploadButtons = context.querySelectorAll('.btnOpenUploadMenu');
     const isFileInputSupported = appHost.supports(AppFeature.FileInput);
     for (let i = 0, length = uploadButtons.length; i < length; i++) {
@@ -399,6 +454,10 @@ function initEditor(context, options) {
 }
 
 function showEditor(options, resolve, reject) {
+    // 创建并打开对话框：
+    // - 先拉取条目（确保 currentItem 与图片 tag 等信息最新）
+    // - 渲染模板并绑定事件
+    // - 对话框 close 时根据 hasChanges 决定 resolve/reject
     const itemId = options.itemId;
     const serverId = options.serverId;
 
@@ -437,8 +496,10 @@ function showEditor(options, resolve, reject) {
             loading.hide();
 
             if (hasChanges) {
+                // 对外表示“有变更”，调用方通常会据此刷新列表/详情
                 resolve();
             } else {
+                // 对外表示“无变更”（也可能是用户直接取消/关闭）
                 reject();
             }
         });
@@ -454,6 +515,10 @@ function showEditor(options, resolve, reject) {
 }
 
 export function show (options) {
+    // 对外入口：
+    // - 返回 Promise
+    // - 若发生变更则 resolve，否则 reject（用于调用方决定是否刷新）
+    // - hasChanges 是对话框生命周期内的状态标记
     return new Promise(function (resolve, reject) {
         hasChanges = false;
         showEditor(options, resolve, reject);

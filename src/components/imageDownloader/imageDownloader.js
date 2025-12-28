@@ -16,17 +16,21 @@ import '../formdialog.scss';
 import '../cardbuilder/card.scss';
 import template from './imageDownloader.template.html';
 
+// 电视端遥控焦点高亮时，是否启用缩放/动画效果。
+// 低性能浏览器或 Edge 下禁用，避免卡顿或渲染问题。
 const enableFocusTransform = !browser.slow && !browser.edge;
 
+// 当前正在编辑/下载封面的条目上下文（由 show(...) 初始化）。
 let currentItemId;
 let currentItemType;
 let currentResolve;
 let currentReject;
 let hasChanges = false;
 
-// These images can be large and we're seeing memory problems in safari
+// 远程图片可能很大：Safari 上曾出现内存问题，因此按设备性能控制分页大小。
 const browsableImagePageSize = browser.slow ? 6 : 30;
 
+// 远程图片浏览器的分页/筛选状态（会在同一个对话框生命周期内变化）。
 let browsableImageStartIndex = 0;
 let browsableImageType = 'Primary';
 let selectedProvider;
@@ -35,6 +39,7 @@ let browsableParentId;
 function getBaseRemoteOptions(page, forceCurrentItemId = false) {
     const options = {};
 
+    // “显示父级图片”勾选且存在 parentId 时，用父级作为查询对象；否则用当前条目。
     if (!forceCurrentItemId && page.querySelector('#chkShowParentImages').checked && browsableParentId) {
         options.itemId = browsableParentId;
     } else {
@@ -49,6 +54,7 @@ function reloadBrowsableImages(page, apiClient) {
 
     const options = getBaseRemoteOptions(page);
 
+    // 后端接口参数：图片类型/分页/语言过滤/可选的提供方。
     options.type = browsableImageType;
     options.startIndex = browsableImageStartIndex;
     options.limit = browsableImagePageSize;
@@ -60,6 +66,7 @@ function reloadBrowsableImages(page, apiClient) {
         options.ProviderName = provider;
     }
 
+    // 拉取可用的远程图片列表（含 Providers、总数等信息）。
     apiClient.getAvailableRemoteImages(options).then(function (result) {
         renderRemoteImages(page, apiClient, result, browsableImageType, options.startIndex, options.limit);
 
@@ -78,6 +85,7 @@ function reloadBrowsableImages(page, apiClient) {
 }
 
 function renderRemoteImages(page, apiClient, imagesResult, imageType, startIndex, limit) {
+    // 顶部分页条（上一页/下一页 + “第 X- Y / 总数”文本）。
     page.querySelector('.availableImagesPaging').innerHTML = getPagingHtml(startIndex, limit, imagesResult.TotalRecordCount);
 
     let html = '';
@@ -88,6 +96,7 @@ function renderRemoteImages(page, apiClient, imagesResult, imageType, startIndex
 
     const availableImagesList = page.querySelector('.availableImagesList');
     availableImagesList.innerHTML = html;
+    // 懒加载卡片背景图，避免一次性解码过多图片导致卡顿/内存飙升。
     imageLoader.lazyChildren(availableImagesList);
 
     const btnNextPage = page.querySelector('.btnNextPage');
@@ -95,6 +104,7 @@ function renderRemoteImages(page, apiClient, imagesResult, imageType, startIndex
 
     if (btnNextPage) {
         btnNextPage.addEventListener('click', function () {
+            // 下一页：startIndex 往后推进 pageSize。
             browsableImageStartIndex += browsableImagePageSize;
             reloadBrowsableImages(page, apiClient);
         });
@@ -102,6 +112,7 @@ function renderRemoteImages(page, apiClient, imagesResult, imageType, startIndex
 
     if (btnPreviousPage) {
         btnPreviousPage.addEventListener('click', function () {
+            // 上一页：startIndex 往前回退 pageSize。
             browsableImageStartIndex -= browsableImagePageSize;
             reloadBrowsableImages(page, apiClient);
         });
@@ -113,7 +124,7 @@ function getPagingHtml(startIndex, limit, totalRecordCount) {
 
     const recordsEnd = Math.min(startIndex + limit, totalRecordCount);
 
-    // 20 is the minimum page size
+    // 仅当总数超过当前 limit 时显示上一页/下一页按钮。
     const showControls = totalRecordCount > limit;
 
     html += '<div class="listPaging">';
@@ -139,6 +150,7 @@ function getPagingHtml(startIndex, limit, totalRecordCount) {
 }
 
 function downloadRemoteImage(page, apiClient, url, type, provider) {
+    // 下载图片时必须针对“当前条目”执行，因此强制使用 currentItemId（不受“显示父级图片”影响）。
     const options = getBaseRemoteOptions(page, true);
 
     options.Type = type;
@@ -147,6 +159,7 @@ function downloadRemoteImage(page, apiClient, url, type, provider) {
 
     loading.show();
 
+    // 下载成功即关闭对话框，并在关闭回调中 resolve Promise。
     apiClient.downloadRemoteImage(options).then(function () {
         hasChanges = true;
         const dlg = dom.parentWithClass(page, 'dialog');
@@ -155,10 +168,11 @@ function downloadRemoteImage(page, apiClient, url, type, provider) {
 }
 
 function getRemoteImageHtml(image, imageType) {
+    // TV 端用 button 以便获取/表现焦点；非 TV 用 div + footer 操作按钮。
     const tagName = layoutManager.tv ? 'button' : 'div';
     const enableFooterButtons = !layoutManager.tv;
 
-    // TODO move card creation code to Card component
+    // TODO: 将卡片拼接逻辑迁移到统一的 Card 组件。
 
     let html = '';
 
@@ -166,6 +180,7 @@ function getRemoteImageHtml(image, imageType) {
     const cardBoxCssClass = 'cardBox visualCardBox';
 
     let shape;
+    // 根据图片类型/媒体类型推断卡片比例（影响 padder 与样式）。
     if (imageType === 'Backdrop' || imageType === 'Art' || imageType === 'Thumb' || imageType === 'Logo') {
         shape = 'backdrop';
     } else if (imageType === 'Banner') {
@@ -188,6 +203,7 @@ function getRemoteImageHtml(image, imageType) {
             cssClass += ' show-focus';
 
             if (enableFocusTransform) {
+                // 电视端焦点切换时允许缩放动画（部分浏览器/低性能设备禁用）。
                 cssClass += ' show-animation';
             }
         }
@@ -207,8 +223,10 @@ function getRemoteImageHtml(image, imageType) {
     html += '<div class="cardContent">';
 
     if (layoutManager.tv || !appHost.supports(AppFeature.ExternalLinks)) {
+        // TV 端或不支持外链：用 div 显示（不可点击打开原图）。
         html += '<div class="cardImageContainer lazy" data-src="' + image.Url + '" style="background-position:center center;background-size:contain;"></div>';
     } else {
+        // 支持外链：允许点开原始图片链接（新标签页）。
         html += '<a is="emby-linkbutton" target="_blank" href="' + image.Url + '" class="button-link cardImageContainer lazy" data-src="' + image.Url + '" style="background-position:center center;background-size:contain"></a>';
     }
 
@@ -255,6 +273,7 @@ function getRemoteImageHtml(image, imageType) {
     }
 
     if (enableFooterButtons) {
+        // 非 TV 端：在 footer 放“下载”按钮。
         html += '<div class="cardText cardTextCentered">';
 
         html += `<button is="paper-icon-button-light" class="btnDownloadRemoteImage autoSize" raised" title="${globalize.translate('Download')}"><span class="material-icons cloud_download" aria-hidden="true"></span></button>`;
@@ -272,11 +291,13 @@ function getRemoteImageHtml(image, imageType) {
 }
 
 function reloadBrowsableImagesFirstPage(page, apiClient) {
+    // 任何筛选条件变化都回到第一页。
     browsableImageStartIndex = 0;
     reloadBrowsableImages(page, apiClient);
 }
 
 function initEditor(page, apiClient) {
+    // 绑定筛选/勾选项事件；变化后重新加载远程图片。
     page.querySelector('#selectBrowsableImageType').addEventListener('change', function () {
         browsableImageType = this.value;
         selectedProvider = null;
@@ -299,6 +320,7 @@ function initEditor(page, apiClient) {
     });
 
     page.addEventListener('click', function (e) {
+        // 事件委托：点击下载按钮或 TV 端整张卡片都触发下载。
         const btnDownloadRemoteImage = dom.parentWithClass(e.target, 'btnDownloadRemoteImage');
         if (btnDownloadRemoteImage) {
             const card = dom.parentWithClass(btnDownloadRemoteImage, 'card');
@@ -316,6 +338,7 @@ function initEditor(page, apiClient) {
 function showEditor(itemId, serverId, itemType) {
     loading.show();
 
+    // 通过 serverId 获取对应的 ApiClient（多服务器连接场景）。
     const apiClient = ServerConnections.getApiClient(serverId);
 
     currentItemId = itemId;
@@ -340,10 +363,11 @@ function showEditor(itemId, serverId, itemType) {
     }
 
     if (browsableParentId) {
+        // 仅当传入 parentId 时才显示“显示父级图片”选项。
         dlg.querySelector('#lblShowParentImages').classList.remove('hide');
     }
 
-    // Has to be assigned a z-index after the call to .open()
+    // close 事件需在 open 后绑定：对话框打开后才会分配 z-index。
     dlg.addEventListener('close', onDialogClosed);
 
     dialogHelper.open(dlg);
@@ -366,6 +390,7 @@ function onDialogClosed() {
     }
 
     loading.hide();
+    // 通过 Promise 通知调用方：有下载成功则 resolve，否则 reject（用于刷新 UI 等）。
     if (hasChanges) {
         currentResolve();
     } else {
@@ -374,6 +399,7 @@ function onDialogClosed() {
 }
 
 export function show(itemId, serverId, itemType, imageType, parentId) {
+    // 打开远程图片下载对话框：初始化全局状态，并返回 Promise 给调用方。
     return new Promise(function (resolve, reject) {
         currentResolve = resolve;
         currentReject = reject;

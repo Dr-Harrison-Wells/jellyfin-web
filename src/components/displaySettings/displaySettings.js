@@ -20,6 +20,7 @@ import '../../elements/emby-textarea/emby-textarea';
 import toast from '../toast/toast';
 import template from './displaySettings.template.html';
 
+// 填充主题下拉框：从主题管理器获取所有主题并写入 <option>，最后选中用户已保存主题（否则使用默认主题）。
 function fillThemes(select, selectedTheme) {
     skinManager.getThemes().then(themes => {
         select.innerHTML = themes.map(t => {
@@ -34,6 +35,7 @@ function fillThemes(select, selectedTheme) {
     });
 }
 
+// 加载屏保插件列表：从插件系统读取 Screensaver 类型插件，并追加“无”选项。
 function loadScreensavers(context, userSettings) {
     const selectScreensaver = context.querySelector('.selectScreensaver');
     const options = pluginManager.ofType(PluginType.Screensaver).map(plugin => {
@@ -60,6 +62,7 @@ function loadScreensavers(context, userSettings) {
     }
 }
 
+// 根据平台能力显示/隐藏“显示缺失剧集”字段（某些电视端不支持/不适用）。
 function showOrHideMissingEpisodesField(context) {
     if (browser.tizen || browser.web0s) {
         context.querySelector('.fldDisplayMissingEpisodes').classList.add('hide');
@@ -69,6 +72,7 @@ function showOrHideMissingEpisodesField(context) {
     context.querySelector('.fldDisplayMissingEpisodes').classList.remove('hide');
 }
 
+// 将用户设置与当前用户信息渲染到表单控件上，并按宿主能力决定哪些字段可见。
 function loadForm(context, user, userSettings) {
     if (appHost.supports(AppFeature.DisplayLanguage)) {
         context.querySelector('.languageSection').classList.remove('hide');
@@ -142,6 +146,8 @@ function loadForm(context, user, userSettings) {
     loading.hide();
 }
 
+// 将表单中的值写回 user.Configuration 与 userSettings，并提交到服务器。
+// 注意：当前用户切换主题需要立即调用 skinManager.setTheme 以便即时生效。
 function saveUser(context, user, userSettingsInstance, apiClient) {
     user.Configuration.DisplayMissingEpisodes = context.querySelector('.chkDisplayMissingEpisodes').checked;
 
@@ -181,6 +187,7 @@ function saveUser(context, user, userSettingsInstance, apiClient) {
     return apiClient.updateUserConfiguration(user.Id, user.Configuration);
 }
 
+// 保存入口：拉取最新用户对象 -> 写回配置/设置 -> 更新服务器；必要时弹出“已保存”提示并触发 saved 事件。
 function save(instance, context, userId, userSettings, apiClient, enableSaveConfirmation) {
     loading.show();
 
@@ -197,6 +204,7 @@ function save(instance, context, userId, userSettings, apiClient, enableSaveConf
     });
 }
 
+// 表单提交处理：准备 apiClient/userId/userSettings，确保 userSettings 绑定到当前用户后再保存。
 function onSubmit(e) {
     const self = this;
     const apiClient = ServerConnections.getApiClient(self.options.serverId);
@@ -215,6 +223,7 @@ function onSubmit(e) {
     return false;
 }
 
+// 将模板注入容器并绑定事件，然后触发首次加载。
 function embed(options, self) {
     options.element.innerHTML = globalize.translateHtml(template, 'core');
     options.element.querySelector('form').addEventListener('submit', onSubmit.bind(self));
@@ -230,6 +239,7 @@ class DisplaySettings {
         embed(options, this);
     }
 
+    // 读取用户信息与用户设置，然后填充表单；autoFocus=true 时自动聚焦到第一个可交互控件。
     loadData(autoFocus) {
         const self = this;
         const context = self.options.element;
@@ -251,10 +261,12 @@ class DisplaySettings {
         });
     }
 
+    // 供外部触发保存（等价于提交表单）。
     submit() {
         onSubmit.call(this);
     }
 
+    // 清理引用，避免组件销毁后继续持有 options。
     destroy() {
         this.options = null;
     }

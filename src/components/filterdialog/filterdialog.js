@@ -10,6 +10,9 @@ import './style.scss';
 import template from './filterdialog.template.html';
 import { stopMultiSelect } from '../../components/multiSelect/multiSelect';
 
+// 将“动态返回的可选项(resultItems)”与“当前查询里已选项(queryItems)”合并。
+// - queryItems 通常是用 delimiter 拼接的字符串（例如 Genres 用 '|'，Years 用 ','）
+// - 最终返回去重后的数组，并按字母序排序用于渲染
 function merge(resultItems, queryItems, delimiter) {
     if (!queryItems) {
         return resultItems;
@@ -18,6 +21,9 @@ function merge(resultItems, queryItems, delimiter) {
     return union(resultItems, queryItems.split(delimiter)).sort();
 }
 
+// 根据给定 items 渲染一组复选框，并根据 isCheckedFn 决定默认选中状态。
+// selector: 容器选择器（例如 '.genreFilters'）
+// cssClass: checkbox 标记类名（用于事件委托定位）
 function renderOptions(context, selector, cssClass, items, isCheckedFn) {
     const elem = context.querySelector(selector);
     if (items.length) {
@@ -40,6 +46,8 @@ function renderOptions(context, selector, cssClass, items, isCheckedFn) {
     elem.querySelector('.filterOptions').innerHTML = html;
 }
 
+// 按不同维度（类型/评级/标签/年份）渲染动态筛选项。
+// 注意：Genres/Tags/OfficialRatings 使用 '|' 分隔；Years 使用 ',' 分隔。
 function renderFilters(context, result, query) {
     renderOptions(context, '.genreFilters', 'chkGenreFilter', merge(result.Genres, query.Genres, '|'), function (i) {
         const delimeter = '|';
@@ -59,6 +67,7 @@ function renderFilters(context, result, query) {
     });
 }
 
+// 从服务端拉取“可用筛选项”（不同库/类型会不同），再根据当前 query 渲染。
 function loadDynamicFilters(context, apiClient, userId, itemQuery) {
     return apiClient.getJSON(apiClient.getUrl('Items/Filters', {
         UserId: userId,
@@ -76,6 +85,7 @@ function loadDynamicFilters(context, apiClient, userId, itemQuery) {
 function updateFilterControls(context, options) {
     const query = options.query;
 
+    // 先把“query 当前状态”映射到 UI：初始化各 checkbox 的 checked。
     if (options.mode === 'livetvchannels') {
         context.querySelector('.chkFavorite').checked = query.IsFavorite === true;
     } else {
@@ -114,16 +124,20 @@ function updateFilterControls(context, options) {
      * @param instance {FilterDialog} An instance of FilterDialog
      */
 function triggerChange(instance) {
+    // 变更筛选时结束多选模式，避免 UI/手势冲突。
     stopMultiSelect();
+    // 对外抛出 filterchange 事件，由调用方刷新列表。
     Events.trigger(instance, 'filterchange');
 }
 
 function setVisibility(context, options) {
+    // 不同“列表模式”支持的筛选项不同，这里负责控制区域显示/隐藏。
     if (options.mode === 'livetvchannels' || options.mode === 'albums' || options.mode === 'artists' || options.mode === 'albumartists' || options.mode === 'songs') {
         hideByClass(context, 'videoStandard');
     }
 
     if (enableDynamicFilters(options.mode)) {
+        // 动态筛选：Genres/Tags/OfficialRatings/Years 由服务端返回。
         context.querySelector('.genreFilters').classList.remove('hide');
         context.querySelector('.officialRatingFilters').classList.remove('hide');
         context.querySelector('.tagFilters').classList.remove('hide');
@@ -148,18 +162,21 @@ function setVisibility(context, options) {
 }
 
 function showByClass(context, className) {
+    // 批量显示某一类区域
     for (const elem of context.querySelectorAll(`.${className}`)) {
         elem.classList.remove('hide');
     }
 }
 
 function hideByClass(context, className) {
+    // 批量隐藏某一类区域
     for (const elem of context.querySelectorAll(`.${className}`)) {
         elem.classList.add('hide');
     }
 }
 
 function enableDynamicFilters(mode) {
+    // 这些模式会调用 Items/Filters 动态获取筛选项。
     return mode === 'movies' || mode === 'series' || mode === 'albums' || mode === 'albumartists' || mode === 'artists' || mode === 'songs' || mode === 'episodes';
 }
 
@@ -168,6 +185,7 @@ class FilterDialog {
         /**
              * @private
              */
+        // options.query 会被本对话框就地修改（回写筛选条件）。
         this.options = options;
     }
 
@@ -176,7 +194,9 @@ class FilterDialog {
          */
     onFavoriteChange(elem) {
         const query = this.options.query;
+        // 任何筛选变更都回到第一页
         query.StartIndex = 0;
+        // 这里用 null 表示“未限制/不筛选”
         query.IsFavorite = !!elem.checked || null;
         triggerChange(this);
     }
@@ -188,6 +208,8 @@ class FilterDialog {
         const query = this.options.query;
         const filterName = elem.getAttribute('data-filter');
         let filters = query.Filters || '';
+
+        // Filters 是逗号分隔字符串：先删除旧值，再视情况追加。
         filters = (`,${filters}`).replace(`,${filterName}`, '').substring(1);
 
         if (elem.checked) {
@@ -206,6 +228,8 @@ class FilterDialog {
         const query = this.options.query;
         const filterName = elem.getAttribute('data-filter');
         let filters = query.VideoTypes || '';
+
+        // VideoTypes 同样是逗号分隔字符串
         filters = (`,${filters}`).replace(`,${filterName}`, '').substring(1);
 
         if (elem.checked) {
@@ -224,6 +248,8 @@ class FilterDialog {
         const query = this.options.query;
         const filterName = elem.getAttribute('data-filter');
         let filters = query.SeriesStatus || '';
+
+        // SeriesStatus 为逗号分隔字符串
         filters = (`,${filters}`).replace(`,${filterName}`, '').substring(1);
 
         if (elem.checked) {
@@ -241,6 +267,7 @@ class FilterDialog {
     bindEvents(context) {
         const query = this.options.query;
 
+        // 绑定“标准筛选/收藏”事件（不同模式略有区别）
         if (this.options.mode === 'livetvchannels') {
             for (const elem of context.querySelectorAll('.chkFavorite')) {
                 elem.addEventListener('change', () => this.onFavoriteChange(elem));
@@ -251,9 +278,12 @@ class FilterDialog {
             }
         }
 
+        // 视频类型筛选（Movies/Episodes）
         for (const elem of context.querySelectorAll('.chkVideoTypeFilter')) {
             elem.addEventListener('change', () => this.onVideoTypeFilterChange(elem));
         }
+
+        // 画质/格式相关筛选（3D/4K/HD/SD），会互相排斥（HD 与 SD）
         const chk3DFilter = context.querySelector('.chk3DFilter');
         chk3DFilter.addEventListener('change', () => {
             query.StartIndex = 0;
@@ -288,9 +318,13 @@ class FilterDialog {
             }
             triggerChange(this);
         });
+
+        // 剧集状态筛选（Continuing/Ended 等）
         for (const elem of context.querySelectorAll('.chkStatus')) {
             elem.addEventListener('change', () => this.onStatusChange(elem));
         }
+
+        // 其他特性筛选：预告片/主题曲/主题视频/花絮/字幕/缺失/特别篇/未来集
         const chkTrailer = context.querySelector('#chkTrailer');
         chkTrailer.addEventListener('change', () => {
             query.StartIndex = 0;
@@ -330,6 +364,7 @@ class FilterDialog {
         const chkFutureEpisode = context.querySelector('#chkFutureEpisode');
         chkFutureEpisode.addEventListener('change', () => {
             query.StartIndex = 0;
+            // FutureEpisode 勾选：只看未播出；取消：回到“不过滤未播出”，并显式排除虚拟未播出。
             if (chkFutureEpisode.checked) {
                 query.IsUnaired = true;
                 query.IsVirtualUnaired = null;
@@ -345,6 +380,8 @@ class FilterDialog {
             query.HasSubtitles = chkSubtitle.checked ? true : null;
             triggerChange(this);
         });
+
+        // 动态筛选项使用事件委托：Genres/Tags/Years/OfficialRatings
         context.addEventListener('change', (e) => {
             const chkGenreFilter = dom.parentWithClass(e.target, 'chkGenreFilter');
             if (chkGenreFilter) {
@@ -418,6 +455,7 @@ class FilterDialog {
 
     show() {
         return new Promise((resolve) => {
+            // 创建并打开对话框（非模态，关闭时自动移除 DOM）
             const dlg = dialogHelper.createDialog({
                 removeOnClose: true,
                 modal: false
@@ -427,11 +465,15 @@ class FilterDialog {
             dlg.classList.add('formDialog');
             dlg.classList.add('filterDialog');
             dlg.innerHTML = globalize.translateHtml(template);
+
+            // 根据 mode 调整可见区域，再初始化控件状态并绑定事件
             setVisibility(dlg, this.options);
             dialogHelper.open(dlg);
             dlg.addEventListener('close', resolve);
             updateFilterControls(dlg, this.options);
             this.bindEvents(dlg);
+
+            // 如果支持动态筛选，则额外请求服务端过滤维度并渲染
             if (enableDynamicFilters(this.options.mode)) {
                 dlg.classList.add('dynamicFilterDialog');
                 const apiClient = ServerConnections.getApiClient(this.options.serverId);

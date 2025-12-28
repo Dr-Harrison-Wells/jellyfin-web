@@ -17,10 +17,13 @@ import '../formdialog.scss';
 import '../../styles/flexstyles.scss';
 import template from './filtermenu.template.html';
 
+// 阻止表单默认提交：该对话框通过监听 change 来判断是否“提交”（即内容是否有变更）
 function onSubmit(e) {
     e.preventDefault();
     return false;
 }
+
+// 将一组筛选项（items）渲染为 checkbox 列表，并根据 isCheckedFn 决定默认选中状态
 function renderOptions(context, selector, cssClass, items, isCheckedFn) {
     const elem = context.querySelector(selector);
 
@@ -47,19 +50,24 @@ function renderOptions(context, selector, cssClass, items, isCheckedFn) {
     elem.querySelector('.filterOptions').innerHTML = html;
 }
 
+// 渲染需要从服务器动态获取的筛选项（目前包含 Genres）
 function renderDynamicFilters(context, result, options) {
     renderOptions(context, '.genreFilters', 'chkGenreFilter', result.Genres, function (i) {
-        // Switching from | to ,
+        // 兼容旧版本设置：历史上 GenreIds 可能用 "|" 分隔，后来改为 ","。
+        // 这里通过检测当前字符串是否包含 "|" 来决定用哪个分隔符做包含判断。
         const delimeter = (options.settings.GenreIds || '').indexOf('|') === -1 ? ',' : '|';
         return (delimeter + (options.settings.GenreIds || '') + delimeter).indexOf(delimeter + i.Id + delimeter) !== -1;
     });
 }
 
+// 保存基础开关类筛选（simpleFilter）：统一存到 userSettings 的 filter 中
 function setBasicFilter(context, key, elem) {
     let value = elem.checked;
     value = value || null;
     userSettings.setFilter(key, value);
 }
+
+// TV/键盘模式下，在垂直排列的 checkbox 列表里按左右移动焦点
 function moveCheckboxFocus(elem, offset) {
     const parent = dom.parentWithClass(elem, 'checkboxList-verticalwrap');
     const elems = focusManager.getFocusableElements(parent);
@@ -82,12 +90,16 @@ function moveCheckboxFocus(elem, offset) {
         focusManager.focus(newElem);
     }
 }
+
+// 在 TV 布局中打开/关闭“自动将焦点滚动到可视区域中心”的行为
 function centerFocus(elem, horiz, on) {
     import('../../scripts/scrollHelper').then((scrollHelper) => {
         const fn = on ? 'on' : 'off';
         scrollHelper.centerFocus[fn](elem, horiz);
     });
 }
+
+// 处理输入命令（TV 遥控/键盘）：仅处理左右切换焦点
 function onInputCommand(e) {
     switch (e.detail.command) {
         case 'left':
@@ -102,6 +114,8 @@ function onInputCommand(e) {
             break;
     }
 }
+
+// 将当前 UI 勾选状态写回 userSettings（按 settingsKey 做命名空间隔离）
 function saveValues(context, settings, settingsKey) {
     context.querySelectorAll('.simpleFilter').forEach(elem => {
         if (elem.tagName === 'INPUT') {
@@ -141,6 +155,8 @@ function saveValues(context, settings, settingsKey) {
 
     userSettings.setFilter(settingsKey + '-filter-GenreIds', genres.join(','));
 }
+
+// 给 checkbox 列表绑定/解绑 inputManager，以支持 TV 遥控左右键移动
 function bindCheckboxInput(context, on) {
     const elems = context.querySelectorAll('.checkboxList-verticalwrap');
     for (let i = 0, length = elems.length; i < length; i++) {
@@ -151,6 +167,8 @@ function bindCheckboxInput(context, on) {
         }
     }
 }
+
+// 初始化对话框：根据 settings 回填所有筛选项的选中状态，并决定是否隐藏空的分组
 function initEditor(context, settings) {
     context.querySelector('form').addEventListener('submit', onSubmit);
 
@@ -192,6 +210,8 @@ function initEditor(context, settings) {
         context.querySelector('.featureSection').classList.add('hide');
     }
 }
+
+// 从服务器获取动态筛选项（例如 Genres），并渲染到对话框
 function loadDynamicFilters(context, options) {
     const apiClient = ServerConnections.getApiClient(options.serverId);
 
@@ -206,6 +226,8 @@ function loadDynamicFilters(context, options) {
         renderDynamicFilters(context, result, options);
     });
 }
+
+// 筛选菜单：以对话框形式展示，用户修改后关闭时写回设置
 class FilterMenu {
     show(options) {
         return new Promise( (resolve) => {
@@ -258,6 +280,7 @@ class FilterMenu {
 
             let submitted;
 
+            // 只要表单内容发生变化，就认为“有提交”；关闭对话框时据此决定是否保存
             dlg.querySelector('form').addEventListener('change', function () {
                 submitted = true;
             }, true);
