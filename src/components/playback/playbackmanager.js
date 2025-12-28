@@ -92,7 +92,7 @@ function bindToFullscreenChange(player) {
             Events.trigger(player, 'fullscreenchange');
         });
     } else {
-        // iOS Safari
+        // iOS Safari（webkit 全屏事件）
         document.addEventListener('webkitfullscreenchange', function () {
             Events.trigger(player, 'fullscreenchange');
         }, false);
@@ -133,8 +133,8 @@ function triggerPlayerChange(playbackManagerInstance, newPlayer, newTarget, prev
  */
 function reportPlayback(playbackManagerInstance, state, player, reportPlaylist, serverId, method, progressEventName) {
     if (!serverId) {
-        // Not a server item
-        // We can expand on this later and possibly report them
+        // 非服务器条目（例如本地 URL/文件）。
+        // 目前不向服务器上报；后续如有需要可扩展为对本地来源也做上报。
         Events.trigger(playbackManagerInstance, 'reportplayback', [false]);
         return;
     }
@@ -152,7 +152,7 @@ function reportPlayback(playbackManagerInstance, state, player, reportPlaylist, 
 
     const apiClient = ServerConnections.getApiClient(serverId);
     const reportPlaybackPromise = apiClient[method](info);
-    // Notify that report has been sent
+    // 通知：已向服务器发出上报请求（不代表服务器一定已成功处理）。
     reportPlaybackPromise.then(() => {
         Events.trigger(playbackManagerInstance, 'reportplayback', [true]);
     });
@@ -248,7 +248,7 @@ function getItemsForPlayback(serverId, query) {
  * @returns {Object} 流信息对象,包含 URL、播放方法等
  */
 function createStreamInfoFromUrlItem(item) {
-    // Check item.Path for games
+    // 游戏等条目可能使用 Path 作为可播放地址
     return {
         url: item.Url || item.Path,
         playMethod: 'DirectPlay',
@@ -382,7 +382,7 @@ function enableIntros(item) {
     if (item.Type === 'TvChannel') {
         return false;
     }
-    // disable for in-progress recordings
+    // 录制进行中：禁用片头（避免影响录制/直播式播放体验）
     if (item.Status === 'InProgress') {
         return false;
     }
@@ -421,7 +421,7 @@ function getIntros(firstItem, apiClient, options) {
  * @returns {Object} 包含 maxAudioSampleRate、maxAudioBitDepth、maxAudioBitrate 的对象
  */
 function getAudioMaxValues(deviceProfile) {
-    // TODO - this could vary per codec and should be done on the server using the entire profile
+    // TODO: 这些上限可能随不同 codec 而变化，更合理的做法是让服务端基于完整 DeviceProfile 计算。
     let maxAudioSampleRate = null;
     let maxAudioBitDepth = null;
     let maxAudioBitrate = null;
@@ -692,7 +692,7 @@ async function getPlaybackInfo(player, apiClient, item, deviceProfile, mediaSour
         query.EnableMediaProbe = false;
     }
 
-    // lastly, enforce player overrides for special situations
+    // 最后：针对某些特殊场景，强制应用播放器自身的覆盖/限制（例如不支持 DirectStream）。
     if (query.EnableDirectStream !== false
         && player.supportsPlayMethod && !player.supportsPlayMethod('DirectStream', item)
     ) {
@@ -793,7 +793,7 @@ function getLiveStream(player, apiClient, item, playSessionId, deviceProfile, me
         query.SubtitleStreamIndex = options.subtitleStreamIndex;
     }
 
-    // lastly, enforce player overrides for special situations
+    // 最后：针对某些特殊场景，强制应用播放器自身的覆盖/限制（例如不支持 DirectStream）。
     if (query.EnableDirectStream !== false
         && player.supportsPlayMethod && !player.supportsPlayMethod('DirectStream', item)
     ) {
@@ -832,7 +832,7 @@ function isHostReachable(mediaSource, apiClient) {
             if (!endpointInfo.IsLocal) {
                 const path = (mediaSource.Path || '').toLowerCase();
                 if (path.indexOf('localhost') !== -1 || path.indexOf('127.0.0.1') !== -1) {
-                    // This will only work if the app is on the same machine as the server
+                    // 只有当 Web App 与服务端在同一台机器上时才可能访问 localhost/127.0.0.1
                     return Promise.resolve(false);
                 }
             }
@@ -840,7 +840,7 @@ function isHostReachable(mediaSource, apiClient) {
             return Promise.resolve(true);
         }
 
-        // media source is in network, but connection is out of network
+        // 媒体源属于内网地址，但当前连接处于外网环境：判定不可达
         return Promise.resolve(false);
     });
 }
@@ -860,7 +860,7 @@ function isHostReachable(mediaSource, apiClient) {
  * @returns {Promise<boolean>} 是否支持直接播放的Promise
  */
 function supportsDirectPlay(apiClient, item, mediaSource) {
-    // folder rip hacks due to not yet being supported by the stream building engine
+    // 文件夹翻录（蓝光/DVD 等）目前流构建引擎支持不完整，这里做一些兼容性处理。
     const isFolderRip = mediaSource.VideoType === 'BluRay' || mediaSource.VideoType === 'Dvd' || mediaSource.VideoType === 'HdDvd';
 
     if (mediaSource.SupportsDirectPlay || isFolderRip) {
@@ -869,7 +869,7 @@ function supportsDirectPlay(apiClient, item, mediaSource) {
         }
 
         if (mediaSource.Protocol === 'Http' && !mediaSource.RequiredHttpHeaders.length) {
-            // If this is the only way it can be played, then allow it
+            // 如果“直接播放”是唯一可播放方式，则允许（避免无路可走）。
             if (!mediaSource.SupportsDirectStream && !mediaSource.SupportsTranscoding) {
                 return Promise.resolve(true);
             } else {
@@ -892,8 +892,7 @@ function supportsDirectPlay(apiClient, item, mediaSource) {
  */
 function validatePlaybackInfoResult(instance, result) {
     if (result.ErrorCode) {
-        // NOTE: To avoid needing to retranslate the "NoCompatibleStream" message,
-        // we need to keep the key in the same format.
+        // 注意：为避免重新翻译 "NoCompatibleStream"，这里需要保持 key 的格式不变。
         const errMessage = result.ErrorCode === PlaybackErrorCode.NoCompatibleStream ?
             'PlaybackErrorNoCompatibleStream' : `PlaybackError.${result.ErrorCode}`;
         showPlaybackInfoErrorMessage(instance, errMessage);
@@ -1263,9 +1262,8 @@ export class PlaybackManager {
         self.trackHasSecondarySubtitleSupport = function (track, player = self._currentPlayer) {
             if (!player || !track) return false;
             const format = (track.Codec || '').toLowerCase();
-            // Currently, only non-SSA/non-ASS external subtitles are supported.
-            // Showing secondary subtitles does not work with any SSA/ASS subtitle combinations because
-            // of the complexity of how they are rendered and the risk of the subtitles overlapping
+            // 目前仅支持非 SSA/ASS 的外部字幕作为第二字幕。
+            // SSA/ASS 渲染与样式叠加较复杂，双字幕组合容易发生重叠，风险较高。
             return format !== 'ssa' && format !== 'ass' && getDeliveryMethod(track) === 'External';
         };
 
@@ -1703,7 +1701,7 @@ export class PlaybackManager {
             if (player) {
                 if (!brightnessOsdLoaded) {
                     brightnessOsdLoaded = true;
-                    // TODO: Have this trigger an event instead to get the osd out of here
+                    // TODO: 更理想的方式是触发事件，由外部订阅者显示 OSD，避免播放管理器直接耦合 UI。
                     import('./brightnessosd').then();
                 }
                 player.setBrightness(val);
@@ -1950,7 +1948,7 @@ export class PlaybackManager {
                 changeStream(player, getCurrentTicks(player), { AudioStreamIndex: index });
                 getPlayerData(player).audioStreamIndex = index;
             } else {
-                // See if the player supports the track without transcoding
+                // 尝试在“不转码”的前提下判断播放器是否原生支持该音轨
                 player.getDeviceProfile(self.currentItem(player)).then(function (profile) {
                     if (isAudioStreamSupported(self.currentMediaSource(player), index, profile)) {
                         player.setAudioStreamIndex(index);
@@ -1965,7 +1963,7 @@ export class PlaybackManager {
 
         function getSavedMaxStreamingBitrate(apiClient, mediaType) {
             if (!apiClient) {
-                // This should hopefully never happen
+                // 理论上不应发生：兜底使用当前连接的 apiClient
                 apiClient = ServerConnections.currentApiClient();
             }
 
@@ -2175,7 +2173,7 @@ export class PlaybackManager {
          * @returns {string} 传送方式: External(外部)、Embed(嵌入)或 Encode(编码)
          */
         function getDeliveryMethod(subtitleStream) {
-            // This will be null for internal subs for local items
+            // 本地条目的内嵌字幕可能没有 DeliveryMethod 字段
             if (subtitleStream.DeliveryMethod) {
                 return subtitleStream.DeliveryMethod;
             }
@@ -2214,7 +2212,7 @@ export class PlaybackManager {
 
             if (currentStream && !newStream) {
                 if (getDeliveryMethod(currentStream) === 'Encode' || (getDeliveryMethod(currentStream) === 'Embed' && currentPlayMethod === 'Transcode')) {
-                    // Need to change the transcoded stream to remove subs
+                    // 需要重新请求转码流以移除字幕
                     changeStream(player, getCurrentTicks(player), { SubtitleStreamIndex: -1 });
                 }
             } else if (!currentStream && newStream) {
@@ -2223,29 +2221,28 @@ export class PlaybackManager {
                 } else if (getDeliveryMethod(newStream) === 'Embed' && currentPlayMethod !== 'Transcode') {
                     selectedTrackElementIndex = index;
                 } else {
-                    // Need to change the transcoded stream to add subs
+                    // 需要重新请求转码流以添加字幕
                     changeStream(player, getCurrentTicks(player), { SubtitleStreamIndex: index });
                 }
             } else if (currentStream && newStream) {
-                // Switching tracks
-                // We can handle this clientside if the new track is external or the new track is embedded and we're not transcoding
+                // 切换字幕轨道：
+                // - 外挂字幕，或“内嵌字幕 + 非转码”时，可以纯客户端切换
                 if (getDeliveryMethod(newStream) === 'External' || (getDeliveryMethod(newStream) === 'Embed' && currentPlayMethod !== 'Transcode')) {
                     selectedTrackElementIndex = index;
 
-                    // But in order to handle this client side, if the previous track is being added via transcoding, we'll have to remove it
+                    // 若旧字幕是通过转码叠加的，为了能在客户端切换，需要先请求一次转码流把旧字幕移除。
                     if (getDeliveryMethod(currentStream) !== 'External' && getDeliveryMethod(currentStream) !== 'Embed') {
                         changeStream(player, getCurrentTicks(player), { SubtitleStreamIndex: -1 });
                     }
                 } else {
-                    // Need to change the transcoded stream to add subs
+                    // 需要重新请求转码流以添加字幕
                     changeStream(player, getCurrentTicks(player), { SubtitleStreamIndex: index });
                 }
             }
 
             player.setSubtitleStreamIndex(selectedTrackElementIndex);
 
-            // Also disable secondary subtitles when disabling the primary
-            // subtitles, or if it doesn't support a secondary pair
+            // 禁用主字幕时一并禁用第二字幕；或者当所选主字幕不支持与第二字幕配对时，也强制禁用第二字幕。
             if (selectedTrackElementIndex === -1 || !self.trackHasSecondarySubtitleSupport(newStream)) {
                 self.setSecondarySubtitleStreamIndex(-1);
             }
@@ -2278,8 +2275,8 @@ export class PlaybackManager {
                 return;
             }
 
-            // Secondary subtitles are currently only handled client side
-            // Changes to the server code are required before we can handle other delivery methods
+            // 第二字幕目前仅支持“纯客户端处理”的方式。
+            // 若未来要支持其它交付方式（例如服务端转码叠加），需要配合服务端实现。
             if (newStream && !self.trackHasSecondarySubtitleSupport(newStream, player)) {
                 return;
             }
@@ -2637,7 +2634,7 @@ export class PlaybackManager {
          */
         function sortItemsIfNeeded(items, options) {
             if (items.length > 1 && options?.ids) {
-                // Use the original request id array for sorting the result in the proper order
+                // 使用原始请求的 id 顺序对结果排序，确保与调用方预期一致
                 items.sort(function (a, b) {
                     return options.ids.indexOf(a.Id) - options.ids.indexOf(b.Id);
                 });
@@ -2685,10 +2682,10 @@ export class PlaybackManager {
                     return getItemsForPlayback(serverId, mergePlaybackQueries({
                         ParentId: firstItem.Id,
                         Filters: 'IsNotFolder',
-                        // Setting this to true may cause some incorrect sorting
+                        // 设为 true 可能导致排序不完全符合预期（历史行为说明）
                         Recursive: false,
                         SortBy: options.shuffle ? 'Random' : 'SortName',
-                        // Only include Photos because we do not handle mixed queues currently
+                        // 当前不支持混合队列：这里只包含照片
                         MediaTypes: 'Photo',
                         Limit: UNLIMITED_ITEMS
                     }, queryOptions));

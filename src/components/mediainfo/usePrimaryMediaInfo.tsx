@@ -1,3 +1,8 @@
+/**
+ * 主要媒体信息 Hook
+ * 用于根据不同的媒体项类型和配置选项，生成并返回相应的媒体信息数组
+ */
+
 import * as userSettings from 'scripts/settings/userSettings';
 import datetime from 'scripts/datetime';
 import globalize from 'lib/globalize';
@@ -14,6 +19,13 @@ import type { ItemDto } from 'types/base/models/item-dto';
 import type { MiscInfo } from 'types/mediaInfoItem';
 import { PrimaryInfoOpts } from './type';
 
+/**
+ * 判断是否应该显示文件夹运行时信息
+ * @param showFolderRuntimeInfo - 是否显示文件夹运行时信息的配置
+ * @param itemType - 媒体项类型
+ * @param itemMediaType - 媒体类型
+ * @returns 是否显示文件夹运行时信息
+ */
 function shouldShowFolderRuntime(
     showFolderRuntimeInfo: boolean,
     itemType: ItemKind,
@@ -29,6 +41,16 @@ function shouldShowFolderRuntime(
     );
 }
 
+/**
+ * 添加曲目数量或项目数量信息
+ * @param isFolderRuntimeEnabled - 是否启用文件夹运行时
+ * @param showItemCountInfo - 是否显示项目数量信息
+ * @param itemSongCount - 歌曲数量
+ * @param itemChildCount - 子项数量
+ * @param itemRunTimeTicks - 运行时间刻度
+ * @param itemType - 媒体项类型
+ * @param addMiscInfo - 添加杂项信息的回调函数
+ */
 function addTrackCountOrItemCount(
     isFolderRuntimeEnabled: boolean,
     showItemCountInfo: boolean,
@@ -60,6 +82,14 @@ function addTrackCountOrItemCount(
     }
 }
 
+/**
+ * 添加原始播出日期信息
+ * @param showOriginalAirDateInfo - 是否显示原始播出日期
+ * @param itemType - 媒体项类型
+ * @param itemMediaType - 媒体类型
+ * @param itemPremiereDate - 首映日期
+ * @param addMiscInfo - 添加杂项信息的回调函数
+ */
 function addOriginalAirDateInfo(
     showOriginalAirDateInfo: boolean,
     itemType: ItemKind,
@@ -74,7 +104,7 @@ function addOriginalAirDateInfo(
         && itemPremiereDate
     ) {
         try {
-            //don't modify date to locale if episode. Only Dates (not times) are stored, or editable in the edit metadata dialog
+            // 如果是剧集，不要修改日期为本地格式。只有日期（非时间）会被存储，或可在编辑元数据对话框中编辑
             const date = datetime.parseISO8601Date(
                 itemPremiereDate,
                 itemType !== ItemKind.Episode
@@ -86,6 +116,16 @@ function addOriginalAirDateInfo(
     }
 }
 
+/**
+ * 添加系列定时器信息
+ * @param showSeriesTimerInfo - 是否显示系列定时器信息
+ * @param itemType - 媒体项类型
+ * @param itemRecordAnyTime - 是否任何时间录制
+ * @param itemStartDate - 开始日期
+ * @param itemRecordAnyChannel - 是否任何频道录制
+ * @param itemChannelName - 频道名称
+ * @param addMiscInfo - 添加杂项信息的回调函数
+ */
 function addSeriesTimerInfo(
     showSeriesTimerInfo: boolean,
     itemType: ItemKind,
@@ -112,6 +152,11 @@ function addSeriesTimerInfo(
     }
 }
 
+/**
+ * 添加节目指示器信息（直播、首映、新节目、重播）
+ * @param program - 节目项
+ * @param addMiscInfo - 添加杂项信息的回调函数
+ */
 function addProgramIndicatorInfo(
     program: ItemDto | undefined,
     addMiscInfo: (val: MiscInfo) => void
@@ -153,6 +198,16 @@ function addProgramIndicatorInfo(
     }
 }
 
+/**
+ * 添加节目指示器
+ * @param showYearInfo - 是否显示年份信息
+ * @param showEpisodeTitleInfo - 是否显示剧集标题信息
+ * @param showOriginalAirDateInfo - 是否显示原始播出日期信息
+ * @param showProgramIndicatorInfo - 是否显示节目指示器信息
+ * @param includeEpisodeTitleIndexNumber - 是否包含剧集标题索引号
+ * @param item - 媒体项
+ * @param addMiscInfo - 添加杂项信息的回调函数
+ */
 function addProgramIndicators(
     showYearInfo: boolean,
     showEpisodeTitleInfo: boolean,
@@ -183,6 +238,15 @@ function addProgramIndicators(
     }
 }
 
+/**
+ * 添加节目文本信息
+ * @param showEpisodeTitleInfo - 是否显示剧集标题信息
+ * @param includeEpisodeTitleIndexNumber - 是否包含剧集标题索引号
+ * @param showOriginalAirDateInfo - 是否显示原始播出日期信息
+ * @param showYearInfo - 是否显示年份信息
+ * @param program - 节目项
+ * @param addMiscInfo - 添加杂项信息的回调函数
+ */
 function addProgramTextInfo(
     showEpisodeTitleInfo: boolean,
     includeEpisodeTitleIndexNumber: boolean,
@@ -218,6 +282,13 @@ function addProgramTextInfo(
     }
 }
 
+/**
+ * 添加开始日期信息
+ * @param showStartDateInfo - 是否显示开始日期信息
+ * @param itemStartDate - 开始日期
+ * @param itemType - 媒体项类型
+ * @param addMiscInfo - 添加杂项信息的回调函数
+ */
 function addStartDateInfo(
     showStartDateInfo: boolean,
     itemStartDate: NullableString,
@@ -244,6 +315,15 @@ function addStartDateInfo(
     }
 }
 
+/**
+ * 添加系列制作年份信息
+ * @param showYearInfo - 是否显示年份信息
+ * @param itemProductionYear - 制作年份
+ * @param itemType - 媒体项类型
+ * @param itemStatus - 媒体项状态
+ * @param itemEndDate - 结束日期
+ * @param addMiscInfo - 添加杂项信息的回调函数
+ */
 function addSeriesProductionYearInfo(
     showYearInfo: boolean,
     itemProductionYear: NullableNumber,
@@ -272,6 +352,12 @@ function addSeriesProductionYearInfo(
     }
 }
 
+/**
+ * 添加包含结束日期的制作年份
+ * @param itemProductionYear - 制作年份
+ * @param itemEndDate - 结束日期
+ * @param addMiscInfo - 添加杂项信息的回调函数
+ */
 function addproductionYearWithEndDate(
     itemProductionYear: number,
     itemEndDate: NullableString,
@@ -287,7 +373,7 @@ function addproductionYearWithEndDate(
                 datetime.parseISO8601Date(itemEndDate).getFullYear(),
                 { useGrouping: false }
             );
-            /* At this point, text will contain only the start year */
+            /* 此时文本仅包含开始年份 */
             if (endYear !== itemProductionYear) {
                 productionYear += `-${endYear}`;
             }
@@ -298,6 +384,15 @@ function addproductionYearWithEndDate(
     addMiscInfo({ text: productionYear });
 }
 
+/**
+ * 添加年份信息
+ * @param showYearInfo - 是否显示年份信息
+ * @param itemType - 媒体项类型
+ * @param itemMediaType - 媒体类型
+ * @param itemProductionYear - 制作年份
+ * @param itemPremiereDate - 首映日期
+ * @param addMiscInfo - 添加杂项信息的回调函数
+ */
 function addYearInfo(
     showYearInfo: boolean,
     itemType: ItemKind,
@@ -331,6 +426,12 @@ function addYearInfo(
     }
 }
 
+/**
+ * 添加视频3D格式信息
+ * @param showVideo3DFormatInfo - 是否显示视频3D格式信息
+ * @param itemVideo3DFormat - 视频3D格式
+ * @param addMiscInfo - 添加杂项信息的回调函数
+ */
 function addVideo3DFormat(
     showVideo3DFormatInfo: boolean,
     itemVideo3DFormat: NullableString,
@@ -341,6 +442,14 @@ function addVideo3DFormat(
     }
 }
 
+/**
+ * 添加运行时间信息
+ * @param isFolderRuntimeEnabled - 是否启用文件夹运行时
+ * @param showRuntimeInfo - 是否显示运行时间信息
+ * @param itemRunTimeTicks - 运行时间刻度
+ * @param itemType - 媒体项类型
+ * @param addMiscInfo - 添加杂项信息的回调函数
+ */
 function addRunTimeInfo(
     isFolderRuntimeEnabled: boolean,
     showRuntimeInfo: boolean,
@@ -369,6 +478,13 @@ function addRunTimeInfo(
     }
 }
 
+/**
+ * 添加官方评级信息
+ * @param showOfficialRatingInfo - 是否显示官方评级信息
+ * @param itemOfficialRating - 官方评级
+ * @param itemType - 媒体项类型
+ * @param addMiscInfo - 添加杂项信息的回调函数
+ */
 function addOfficialRatingInfo(
     showOfficialRatingInfo: boolean,
     itemOfficialRating: NullableString,
@@ -388,6 +504,13 @@ function addOfficialRatingInfo(
     }
 }
 
+/**
+ * 添加音频容器信息
+ * @param showAudioContainerInfo - 是否显示音频容器信息
+ * @param itemContainer - 容器格式
+ * @param itemType - 媒体项类型
+ * @param addMiscInfo - 添加杂项信息的回调函数
+ */
 function addAudioContainer(
     showAudioContainerInfo: boolean,
     itemContainer: NullableString,
@@ -403,6 +526,14 @@ function addAudioContainer(
     }
 }
 
+/**
+ * 添加照片尺寸信息
+ * @param showPhotoSizeInfo - 是否显示照片尺寸信息
+ * @param itemMediaType - 媒体类型
+ * @param itemWidth - 宽度
+ * @param itemHeight - 高度
+ * @param addMiscInfo - 添加杂项信息的回调函数
+ */
 function addPhotoSize(
     showPhotoSizeInfo: boolean,
     itemMediaType: ItemMediaKind,
@@ -422,10 +553,19 @@ function addPhotoSize(
     }
 }
 
+/**
+ * 主要媒体信息Hook的属性接口
+ */
 interface UsePrimaryMediaInfoProps extends PrimaryInfoOpts {
     item: ItemDto;
 }
 
+/**
+ * 主要媒体信息Hook
+ * 根据配置选项处理媒体项并返回相应的信息数组
+ * @param props - Hook属性
+ * @returns 媒体杂项信息数组
+ */
 function usePrimaryMediaInfo({
     item,
     showYearInfo = false,
@@ -464,20 +604,24 @@ function usePrimaryMediaInfo({
         Container
     } = item;
 
+    // 存储所有杂项信息的数组
     const miscInfo: MiscInfo[] = [];
 
+    // 添加杂项信息的辅助函数
     const addMiscInfo = (val: MiscInfo) => {
         if (val) {
             miscInfo.push(val);
         }
     };
 
+    // 判断是否启用文件夹运行时
     const isFolderRuntimeEnabled = shouldShowFolderRuntime(
         showFolderRuntimeInfo,
         Type,
         MediaType
     );
 
+    // 添加曲目数量或项目数量
     addTrackCountOrItemCount(
         isFolderRuntimeEnabled,
         showItemCountInfo,
@@ -488,6 +632,7 @@ function usePrimaryMediaInfo({
         addMiscInfo
     );
 
+    // 添加原始播出日期信息
     addOriginalAirDateInfo(
         showOriginalAirDateInfo,
         Type,
@@ -496,6 +641,7 @@ function usePrimaryMediaInfo({
         addMiscInfo
     );
 
+    // 添加系列定时器信息
     addSeriesTimerInfo(
         showSeriesTimerInfo,
         Type,
@@ -506,8 +652,10 @@ function usePrimaryMediaInfo({
         addMiscInfo
     );
 
+    // 添加开始日期信息
     addStartDateInfo(showStartDateInfo, StartDate, Type, addMiscInfo);
 
+    // 添加系列制作年份信息
     addSeriesProductionYearInfo(
         showYearInfo,
         ProductionYear,
@@ -517,6 +665,7 @@ function usePrimaryMediaInfo({
         addMiscInfo
     );
 
+    // 添加节目指示器
     addProgramIndicators(
         showProgramIndicatorInfo,
         showEpisodeTitleInfo,
@@ -527,6 +676,7 @@ function usePrimaryMediaInfo({
         addMiscInfo
     );
 
+    // 添加年份信息
     addYearInfo(
         showYearInfo,
         Type,
@@ -536,6 +686,7 @@ function usePrimaryMediaInfo({
         addMiscInfo
     );
 
+    // 添加运行时间信息
     addRunTimeInfo(
         isFolderRuntimeEnabled,
         showRuntimeInfo,
@@ -544,6 +695,7 @@ function usePrimaryMediaInfo({
         addMiscInfo
     );
 
+    // 添加官方评级信息
     addOfficialRatingInfo(
         showOfficialRatingInfo,
         OfficialRating,
@@ -551,10 +703,13 @@ function usePrimaryMediaInfo({
         addMiscInfo
     );
 
+    // 添加视频3D格式信息
     addVideo3DFormat(showVideo3DFormatInfo, Video3DFormat, addMiscInfo);
 
+    // 添加照片尺寸信息
     addPhotoSize(showPhotoSizeInfo, MediaType, Width, Height, addMiscInfo);
 
+    // 添加音频容器信息
     addAudioContainer(showAudioContainerInfo, Container, Type, addMiscInfo);
 
     return miscInfo;

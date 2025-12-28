@@ -1,18 +1,33 @@
+// 导入国际化工具
 import globalize from 'lib/globalize';
+// 导入服务器连接管理
 import { ServerConnections } from 'lib/jellyfin-apiclient';
+// 导入插件类型
 import { PluginType } from 'types/plugin';
+// 导入事件工具
 import Events from 'utils/events';
+// 导入文件大小格式化工具
 import { getReadableSize } from 'utils/file';
 
+// 导入布局管理器
 import layoutManager from '../layoutManager';
+// 导入播放管理器
 import { playbackManager } from '../playback/playbackmanager';
+// 导入播放方法辅助工具
 import playMethodHelper from '../playback/playmethodhelper';
+// 导入插件管理器
 import { pluginManager } from '../pluginManager';
 
+// 导入按钮组件
 import 'elements/emby-button/paper-icon-button-light';
 
+// 导入样式
 import './playerstats.scss';
 
+/**
+ * 初始化播放器统计信息界面
+ * @param {Object} instance - PlayerStats实例
+ */
 function init(instance) {
     const parent = document.createElement('div');
 
@@ -47,10 +62,18 @@ function init(instance) {
     instance.element = parent;
 }
 
+/**
+ * 关闭按钮点击事件处理函数
+ */
 function onCloseButtonClick() {
     this.enabled(false);
 }
 
+/**
+ * 渲染统计信息到DOM元素
+ * @param {HTMLElement} elem - 目标DOM元素
+ * @param {Array} categories - 统计信息分类数组
+ */
 function renderStats(elem, categories) {
     elem.querySelector('.playerStats-stats').innerHTML = categories.map(function (category) {
         let categoryHtml = '';
@@ -91,6 +114,12 @@ function renderStats(elem, categories) {
     }).join('');
 }
 
+/**
+ * 获取当前播放会话信息
+ * @param {Object} instance - PlayerStats实例
+ * @param {Object} player - 播放器对象
+ * @returns {Promise} 返回会话信息的Promise
+ */
 function getSession(instance, player) {
     const now = new Date().getTime();
 
@@ -112,10 +141,22 @@ function getSession(instance, player) {
     });
 }
 
+/**
+ * 翻译转码原因
+ * @param {string} reason - 转码原因代码
+ * @returns {string} 翻译后的转码原因
+ */
 function translateReason(reason) {
     return globalize.translate('' + reason);
 }
 
+/**
+ * 获取转码统计信息
+ * @param {Object} session - 播放会话对象
+ * @param {Object} player - 播放器对象
+ * @param {string} displayPlayMethod - 播放方法显示名称
+ * @returns {Array} 转码统计信息数组
+ */
 function getTranscodingStats(session, player, displayPlayMethod) {
     const sessionStats = [];
 
@@ -158,6 +199,7 @@ function getTranscodingStats(session, player, displayPlayMethod) {
                 value: getDisplayBitrate(totalBitrate)
             });
         }
+        // 转码进度百分比
         if (session.TranscodingInfo.CompletionPercentage) {
             sessionStats.push({
                 label: globalize.translate('LabelTranscodingProgress'),
@@ -176,11 +218,10 @@ function getTranscodingStats(session, player, displayPlayMethod) {
                 value: session.TranscodingInfo.TranscodeReasons.map(translateReason).join('<br/>')
             });
         }
-        // Hide this for now because it is not useful in its current state.
-        // This only reflects the configuration in the dashboard, but the actual
-        // decoder/encoder selection is more complex. As a result, the hardware
-        // encoder may not be used even if hardware acceleration is configured,
-        // making the display of hardware acceleration misleading.
+        // 暂时隐藏硬件加速信息，因为当前状态下不够实用。
+        // 这里仅反映了仪表板中的配置，但实际的解码器/编码器选择更复杂。
+        // 因此，即使配置了硬件加速，硬件编码器也可能未被使用，
+        // 这会使硬件加速的显示产生误导。
         // if (session.TranscodingInfo.HardwareAccelerationType) {
         //     sessionStats.push({
         //         label: globalize.translate('LabelHardwareEncoding'),
@@ -192,6 +233,11 @@ function getTranscodingStats(session, player, displayPlayMethod) {
     return sessionStats;
 }
 
+/**
+ * 将比特率转换为可读格式
+ * @param {number} bitrate - 比特率（bps）
+ * @returns {string} 格式化的比特率字符串（Mbps或kbps）
+ */
 function getDisplayBitrate(bitrate) {
     if (bitrate > 1000000) {
         return (bitrate / 1000000).toFixed(1) + ' Mbps';
@@ -200,6 +246,12 @@ function getDisplayBitrate(bitrate) {
     }
 }
 
+/**
+ * 获取转码帧率显示信息
+ * @param {Object} session - 播放会话对象
+ * @param {Object} player - 播放器对象
+ * @returns {string} 格式化的帧率字符串
+ */
 function getDisplayTranscodeFps(session, player) {
     const mediaSource = playbackManager.currentMediaSource(player) || {};
     const videoStream = (mediaSource.MediaStreams || []).find((s) => s.Type === 'Video') || {};
@@ -214,6 +266,12 @@ function getDisplayTranscodeFps(session, player) {
     return `${transcodeFramerate} fps (${(transcodeFramerate / originalFramerate).toFixed(2)}x)`;
 }
 
+/**
+ * 获取媒体源统计信息
+ * @param {Object} session - 播放会话对象
+ * @param {Object} player - 播放器对象
+ * @returns {Array} 媒体源统计信息数组
+ */
 function getMediaSourceStats(session, player) {
     const sessionStats = [];
 
@@ -242,13 +300,16 @@ function getMediaSourceStats(session, player) {
         });
     }
 
+    // 获取媒体流信息
     const mediaStreams = mediaSource.MediaStreams || [];
+    // 获取视频流
     const videoStream = mediaStreams.filter(function (s) {
         return s.Type === 'Video';
     })[0] || {};
 
     const videoCodec = videoStream.Codec;
 
+    // 获取当前音频流索引
     const audioStreamIndex = playbackManager.getAudioStreamIndex(player);
     const audioStream = playbackManager.audioTracks(player).filter(function (s) {
         return s.Type === 'Audio' && s.Index === audioStreamIndex;
@@ -257,6 +318,7 @@ function getMediaSourceStats(session, player) {
     const audioCodec = audioStream.Codec;
     const audioChannels = audioStream.Channels;
 
+    // 收集视频信息
     const videoInfos = [];
 
     if (videoCodec) {
@@ -288,6 +350,7 @@ function getMediaSourceStats(session, player) {
         });
     }
 
+    // 收集音频信息
     const audioInfos = [];
 
     if (audioCodec) {
@@ -336,6 +399,10 @@ function getMediaSourceStats(session, player) {
     return sessionStats;
 }
 
+/**
+ * 获取同步播放统计信息
+ * @returns {Array} 同步播放统计信息数组
+ */
 function getSyncPlayStats() {
     const SyncPlay = pluginManager.firstOfType(PluginType.SyncPlay)?.instance;
 
@@ -346,22 +413,26 @@ function getSyncPlayStats() {
     const syncStats = [];
     const stats = SyncPlay.Manager.getStats();
 
+    // 时间同步设备
     syncStats.push({
         label: globalize.translate('LabelSyncPlayTimeSyncDevice'),
         value: stats.TimeSyncDevice
     });
 
+    // 时间同步偏移
     syncStats.push({
-        // TODO: clean old string 'LabelSyncPlayTimeOffset' from translations.
+        // TODO: 从翻译中清理旧字符串 'LabelSyncPlayTimeOffset'
         label: globalize.translate('LabelSyncPlayTimeSyncOffset'),
         value: stats.TimeSyncOffset + ' ' + globalize.translate('MillisecondsUnit')
     });
 
+    // 播放差异
     syncStats.push({
         label: globalize.translate('LabelSyncPlayPlaybackDiff'),
         value: stats.PlaybackDiff + ' ' + globalize.translate('MillisecondsUnit')
     });
 
+    // 同步方法
     syncStats.push({
         label: globalize.translate('LabelSyncPlaySyncMethod'),
         value: stats.SyncMethod
@@ -370,6 +441,12 @@ function getSyncPlayStats() {
     return syncStats;
 }
 
+/**
+ * 获取所有播放器统计信息
+ * @param {Object} instance - PlayerStats实例
+ * @param {Object} player - 播放器对象
+ * @returns {Promise} 返回包含所有统计信息分类的Promise
+ */
 function getStats(instance, player) {
     const statsPromise = player.getStats ? player.getStats() : Promise.resolve({});
     const sessionPromise = getSession(instance, player);
@@ -382,6 +459,7 @@ function getStats(instance, player) {
         const displayPlayMethod = playMethodHelper.getDisplayPlayMethod(session);
         let localizedDisplayMethod = displayPlayMethod;
 
+        // 将播放方法本地化
         if (displayPlayMethod === 'DirectPlay') {
             localizedDisplayMethod = globalize.translate('DirectPlaying');
         } else if (displayPlayMethod === 'Remux') {
@@ -392,16 +470,19 @@ function getStats(instance, player) {
             localizedDisplayMethod = globalize.translate('Transcoding');
         }
 
+        // 创建基础信息分类
         const baseCategory = {
             stats: [],
             name: globalize.translate('LabelPlaybackInfo')
         };
 
+        // 添加播放方法
         baseCategory.stats.unshift({
             label: globalize.translate('LabelPlayMethod'),
             value: localizedDisplayMethod
         });
 
+        // 添加播放器名称
         baseCategory.stats.unshift({
             label: globalize.translate('LabelPlayer'),
             value: player.name
@@ -411,6 +492,7 @@ function getStats(instance, player) {
 
         categories.push(baseCategory);
 
+        // 添加播放器提供的统计信息分类
         for (let i = 0, length = playerStats.length; i < length; i++) {
             const category = playerStats[i];
             if (category.type === 'audio') {
@@ -421,6 +503,7 @@ function getStats(instance, player) {
             categories.push(category);
         }
 
+        // 根据播放方法本地化转码信息标题
         let localizedTranscodingInfo = globalize.translate('LabelTranscodingInfo');
         if (displayPlayMethod === 'Remux') {
             localizedTranscodingInfo = globalize.translate('LabelRemuxingInfo');
@@ -428,6 +511,7 @@ function getStats(instance, player) {
             localizedTranscodingInfo = globalize.translate('LabelDirectStreamingInfo');
         }
 
+        // 添加转码信息分类
         if (session.TranscodingInfo) {
             categories.push({
                 stats: getTranscodingStats(session, player, displayPlayMethod),
@@ -435,11 +519,13 @@ function getStats(instance, player) {
             });
         }
 
+        // 添加原始媒体信息分类
         categories.push({
             stats: getMediaSourceStats(session, player),
             name: globalize.translate('LabelOriginalMediaInfo')
         });
 
+        // 获取同步播放统计信息
         const syncPlayStats = getSyncPlayStats();
         if (syncPlayStats.length > 0) {
             categories.push({
@@ -452,9 +538,15 @@ function getStats(instance, player) {
     });
 }
 
+/**
+ * 渲染播放器统计信息（带节流）
+ * @param {Object} instance - PlayerStats实例
+ * @param {Object} player - 播放器对象
+ */
 function renderPlayerStats(instance, player) {
     const now = new Date().getTime();
 
+    // 节流：限制渲染频率为700ms
     if ((now - (instance.lastRender || 0)) < 700) {
         return;
     }
@@ -471,6 +563,11 @@ function renderPlayerStats(instance, player) {
     });
 }
 
+/**
+ * 绑定播放器事件
+ * @param {Object} instance - PlayerStats实例
+ * @param {Object} player - 播放器对象
+ */
 function bindEvents(instance, player) {
     const localOnTimeUpdate = function () {
         renderPlayerStats(instance, player);
@@ -480,6 +577,11 @@ function bindEvents(instance, player) {
     Events.on(player, 'timeupdate', localOnTimeUpdate);
 }
 
+/**
+ * 解绑播放器事件
+ * @param {Object} instance - PlayerStats实例
+ * @param {Object} player - 播放器对象
+ */
 function unbindEvents(instance, player) {
     const localOnTimeUpdate = instance.onTimeUpdate;
 
@@ -488,7 +590,16 @@ function unbindEvents(instance, player) {
     }
 }
 
+/**
+ * 播放器统计信息类
+ * 用于显示和管理播放器的各种统计信息
+ */
 class PlayerStats {
+    /**
+     * 构造函数
+     * @param {Object} options - 配置选项
+     * @param {Object} options.player - 播放器对象
+     */
     constructor(options) {
         this.options = options;
 
@@ -497,6 +608,11 @@ class PlayerStats {
         this.enabled(true);
     }
 
+    /**
+     * 启用或禁用统计信息显示
+     * @param {boolean} enabled - 是否启用（不传参数则返回当前状态）
+     * @returns {boolean|undefined} 当前启用状态或undefined
+     */
     enabled(enabled) {
         if (enabled == null) {
             return this._enabled;
@@ -518,10 +634,16 @@ class PlayerStats {
         }
     }
 
+    /**
+     * 切换统计信息显示状态
+     */
     toggle() {
         this.enabled(!this.enabled());
     }
 
+    /**
+     * 销毁统计信息组件，清理资源
+     */
     destroy() {
         const options = this.options;
 

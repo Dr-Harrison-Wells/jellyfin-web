@@ -1,5 +1,6 @@
 
 /**
+ * 媒体库选项编辑器模块
  * Module for library options editor.
  * @module components/libraryoptionseditor/libraryoptionseditor
  */
@@ -16,6 +17,11 @@ import '../../elements/emby-textarea/emby-textarea';
 import './style.scss';
 import template from './libraryoptionseditor.template.html';
 
+/**
+ * 填充语言选项
+ * @param {HTMLElement} parent - 父元素
+ * @returns {Promise} Promise对象
+ */
 function populateLanguages(parent) {
     return ApiClient.getCultures().then(languages => {
         populateLanguagesIntoSelect(parent.querySelector('#selectLanguage'), languages);
@@ -23,6 +29,11 @@ function populateLanguages(parent) {
     });
 }
 
+/**
+ * 将语言选项填充到下拉选择框
+ * @param {HTMLSelectElement} select - 选择框元素
+ * @param {Array} languages - 语言列表
+ */
 function populateLanguagesIntoSelect(select, languages) {
     let html = '';
     html += "<option value=''></option>";
@@ -32,6 +43,11 @@ function populateLanguagesIntoSelect(select, languages) {
     select.innerHTML = html;
 }
 
+/**
+ * 将语言选项填充到复选框列表
+ * @param {HTMLElement} element - 容器元素
+ * @param {Array} languages - 语言列表
+ */
 function populateLanguagesIntoList(element, languages) {
     let html = '';
     for (const culture of languages) {
@@ -40,6 +56,11 @@ function populateLanguagesIntoList(element, languages) {
     element.innerHTML = html;
 }
 
+/**
+ * 填充国家/地区选项
+ * @param {HTMLSelectElement} select - 选择框元素
+ * @returns {Promise} Promise对象
+ */
 function populateCountries(select) {
     return ApiClient.getCountries().then(allCountries => {
         let html = '';
@@ -51,6 +72,10 @@ function populateCountries(select) {
     });
 }
 
+/**
+ * 填充刷新间隔选项
+ * @param {HTMLSelectElement} select - 选择框元素
+ */
 function populateRefreshInterval(select) {
     let html = '';
     html += `<option value='0'>${globalize.translate('Never')}</option>`;
@@ -60,6 +85,12 @@ function populateRefreshInterval(select) {
     select.innerHTML = html;
 }
 
+/**
+ * 渲染元数据读取器列表
+ * @param {HTMLElement} page - 页面元素
+ * @param {Array} plugins - 插件列表
+ * @returns {boolean} 是否成功渲染
+ */
 function renderMetadataReaders(page, plugins) {
     let html = '';
     const elem = page.querySelector('.metadataReaders');
@@ -99,6 +130,12 @@ function renderMetadataReaders(page, plugins) {
     return true;
 }
 
+/**
+ * 渲染元数据保存器列表
+ * @param {HTMLElement} page - 页面元素
+ * @param {Array} metadataSavers - 元数据保存器列表
+ * @returns {boolean} 是否成功渲染
+ */
 function renderMetadataSavers(page, metadataSavers) {
     let html = '';
     const elem = page.querySelector('.metadataSavers');
@@ -119,6 +156,12 @@ function renderMetadataSavers(page, metadataSavers) {
     return true;
 }
 
+/**
+ * 获取指定类型的元数据获取器HTML
+ * @param {Object} availableTypeOptions - 可用的类型选项
+ * @param {Object} libraryOptionsForType - 该类型的媒体库选项
+ * @returns {string} HTML字符串
+ */
 function getMetadataFetchersForTypeHtml(availableTypeOptions, libraryOptionsForType) {
     let html = '';
     let plugins = availableTypeOptions.MetadataFetchers;
@@ -154,6 +197,12 @@ function getMetadataFetchersForTypeHtml(availableTypeOptions, libraryOptionsForT
     return html;
 }
 
+/**
+ * 获取指定类型的选项配置
+ * @param {Object} allOptions - 所有选项配置
+ * @param {string} type - 类型名称
+ * @returns {Object|null} 类型选项配置或null
+ */
 function getTypeOptions(allOptions, type) {
     const allTypeOptions = allOptions.TypeOptions || [];
     for (const typeOptions of allTypeOptions) {
@@ -162,6 +211,13 @@ function getTypeOptions(allOptions, type) {
     return null;
 }
 
+/**
+ * 渲染元数据获取器
+ * @param {HTMLElement} page - 页面元素
+ * @param {Object} availableOptions - 可用选项
+ * @param {Object} libraryOptions - 媒体库选项
+ * @returns {boolean} 是否成功渲染
+ */
 function renderMetadataFetchers(page, availableOptions, libraryOptions) {
     let html = '';
     const elem = page.querySelector('.metadataFetchers');
@@ -183,6 +239,13 @@ function renderMetadataFetchers(page, availableOptions, libraryOptions) {
     return true;
 }
 
+/**
+ * 渲染字幕获取器
+ * @param {HTMLElement} page - 页面元素
+ * @param {Object} availableOptions - 可用选项
+ * @param {Object} libraryOptions - 媒体库选项
+ * @returns {string} HTML字符串
+ */
 function renderSubtitleFetchers(page, availableOptions, libraryOptions) {
     let html = '';
     const elem = page.querySelector('.subtitleFetchers');
@@ -216,6 +279,13 @@ function renderSubtitleFetchers(page, availableOptions, libraryOptions) {
     elem.innerHTML = html;
 }
 
+/**
+ * 渲染歌词获取器
+ * @param {HTMLElement} page - 页面元素
+ * @param {Object} availableOptions - 可用选项
+ * @param {Object} libraryOptions - 媒体库选项
+ * @returns {string} HTML字符串
+ */
 function renderLyricFetchers(page, availableOptions, libraryOptions) {
     let html = '';
     const elem = page.querySelector('.lyricFetchers');
@@ -249,6 +319,13 @@ function renderLyricFetchers(page, availableOptions, libraryOptions) {
     elem.innerHTML = html;
 }
 
+/**
+ * 渲染媒体片段提供器
+ * @param {HTMLElement} page - 页面元素
+ * @param {Object} availableOptions - 可用选项
+ * @param {Object} libraryOptions - 媒体库选项
+ * @returns {string} HTML字符串
+ */
 function renderMediaSegmentProviders(page, availableOptions, libraryOptions) {
     let html = '';
     const elem = page.querySelector('.mediaSegmentProviders');
@@ -283,6 +360,12 @@ function renderMediaSegmentProviders(page, availableOptions, libraryOptions) {
     elem.innerHTML = html;
 }
 
+/**
+ * 获取指定类型的图片获取器HTML
+ * @param {Object} availableTypeOptions - 可用的类型选项
+ * @param {Object} libraryOptionsForType - 该类型的媒体库选项
+ * @returns {string} HTML字符串
+ */
 function getImageFetchersForTypeHtml(availableTypeOptions, libraryOptionsForType) {
     let html = '';
     let plugins = availableTypeOptions.ImageFetchers;
@@ -323,6 +406,13 @@ function getImageFetchersForTypeHtml(availableTypeOptions, libraryOptionsForType
     return html;
 }
 
+/**
+ * 渲染图片获取器
+ * @param {HTMLElement} page - 页面元素
+ * @param {Object} availableOptions - 可用选项
+ * @param {Object} libraryOptions - 媒体库选项
+ * @returns {boolean} 是否成功渲染
+ */
 function renderImageFetchers(page, availableOptions, libraryOptions) {
     let html = '';
     const elem = page.querySelector('.imageFetchers');
@@ -340,6 +430,12 @@ function renderImageFetchers(page, availableOptions, libraryOptions) {
     return true;
 }
 
+/**
+ * 填充元数据设置
+ * @param {HTMLElement} parent - 父元素
+ * @param {string} contentType - 内容类型
+ * @returns {Promise} Promise对象
+ */
 function populateMetadataSettings(parent, contentType) {
     const isNewLibrary = parent.classList.contains('newlibrary');
     return ApiClient.getJSON(ApiClient.getUrl('Libraries/AvailableOptions', {
@@ -361,6 +457,10 @@ function populateMetadataSettings(parent, contentType) {
     });
 }
 
+/**
+ * 调整可排序列表元素的按钮状态
+ * @param {HTMLElement} elem - 列表元素
+ */
 function adjustSortableListElement(elem) {
     const btnSortable = elem.querySelector('.btnSortable');
     const inner = btnSortable.querySelector('.material-icons');
@@ -379,6 +479,10 @@ function adjustSortableListElement(elem) {
     }
 }
 
+/**
+ * 显示指定类型的图片选项编辑器
+ * @param {string} type - 内容类型
+ */
 function showImageOptionsForType(type) {
     import('../imageOptionsEditor/imageOptionsEditor').then(({ default: ImageOptionsEditor }) => {
         let typeOptions = getTypeOptions(currentLibraryOptions, type);
@@ -394,6 +498,10 @@ function showImageOptionsForType(type) {
     });
 }
 
+/**
+ * 图片获取器容器点击事件处理
+ * @param {Event} e - 事件对象
+ */
 function onImageFetchersContainerClick(e) {
     const btnImageOptionsForType = dom.parentWithClass(e.target, 'btnImageOptionsForType');
     if (btnImageOptionsForType) {
@@ -403,6 +511,10 @@ function onImageFetchersContainerClick(e) {
     onSortableContainerClick.call(this, e);
 }
 
+/**
+ * 可排序容器点击事件处理
+ * @param {Event} e - 事件对象
+ */
 function onSortableContainerClick(e) {
     const btnSortable = dom.parentWithClass(e.target, 'btnSortable');
     if (btnSortable) {
@@ -425,6 +537,10 @@ function onSortableContainerClick(e) {
     }
 }
 
+/**
+ * 绑定事件监听器
+ * @param {HTMLElement} parent - 父元素
+ */
 function bindEvents(parent) {
     parent.querySelector('.metadataReaders').addEventListener('click', onSortableContainerClick);
     parent.querySelector('.subtitleFetchers').addEventListener('click', onSortableContainerClick);
@@ -438,6 +554,13 @@ function bindEvents(parent) {
     });
 }
 
+/**
+ * 嵌入媒体库选项编辑器到指定容器
+ * @param {HTMLElement} parent - 父元素
+ * @param {string} contentType - 内容类型
+ * @param {Object} libraryOptions - 媒体库选项
+ * @returns {Promise} Promise对象
+ */
 export async function embed(parent, contentType, libraryOptions) {
     currentLibraryOptions = {
         TypeOptions: []
@@ -457,6 +580,7 @@ export async function embed(parent, contentType, libraryOptions) {
     });
 }
 
+// 支持章节功能的内容类型
 const CHAPTER_CONTENT_TYPES = [
     CollectionType.Homevideos,
     CollectionType.Movies,
@@ -464,6 +588,12 @@ const CHAPTER_CONTENT_TYPES = [
     CollectionType.Tvshows
 ];
 
+/**
+ * 设置内容类型并更新界面显示
+ * @param {HTMLElement} parent - 父元素
+ * @param {string} contentType - 内容类型
+ * @returns {Promise} Promise对象
+ */
 export function setContentType(parent, contentType) {
     if (contentType === 'homevideos' || contentType === 'photos') {
         parent.querySelector('.chkEnablePhotosContainer').classList.remove('hide');
@@ -522,6 +652,11 @@ export function setContentType(parent, contentType) {
     return populateMetadataSettings(parent, contentType);
 }
 
+/**
+ * 将字幕获取器设置保存到选项对象
+ * @param {HTMLElement} parent - 父元素
+ * @param {Object} options - 选项对象
+ */
 function setSubtitleFetchersIntoOptions(parent, options) {
     options.DisabledSubtitleFetchers = Array.prototype.map.call(Array.prototype.filter.call(parent.querySelectorAll('.chkSubtitleFetcher'), elem => {
         return !elem.checked;
@@ -534,6 +669,11 @@ function setSubtitleFetchersIntoOptions(parent, options) {
     });
 }
 
+/**
+ * 将歌词获取器设置保存到选项对象
+ * @param {HTMLElement} parent - 父元素
+ * @param {Object} options - 选项对象
+ */
 function setLyricFetchersIntoOptions(parent, options) {
     options.DisabledLyricFetchers = Array.prototype.map.call(Array.prototype.filter.call(parent.querySelectorAll('.chkLyricFetcher'), elem => {
         return !elem.checked;
@@ -546,6 +686,11 @@ function setLyricFetchersIntoOptions(parent, options) {
     });
 }
 
+/**
+ * 将媒体片段提供器设置保存到选项对象
+ * @param {HTMLElement} parent - 父元素
+ * @param {Object} options - 选项对象
+ */
 function setMediaSegmentProvidersIntoOptions(parent, options) {
     options.DisabledMediaSegmentProviders = Array.prototype.map.call(Array.prototype.filter.call(parent.querySelectorAll('.chkMediaSegmentProvider'), elem => {
         return !elem.checked;
@@ -558,6 +703,11 @@ function setMediaSegmentProvidersIntoOptions(parent, options) {
     });
 }
 
+/**
+ * 将元数据获取器设置保存到选项对象
+ * @param {HTMLElement} parent - 父元素
+ * @param {Object} options - 选项对象
+ */
 function setMetadataFetchersIntoOptions(parent, options) {
     const sections = parent.querySelectorAll('.metadataFetcher');
     for (const section of sections) {
@@ -581,6 +731,11 @@ function setMetadataFetchersIntoOptions(parent, options) {
     }
 }
 
+/**
+ * 将图片获取器设置保存到选项对象
+ * @param {HTMLElement} parent - 父元素
+ * @param {Object} options - 选项对象
+ */
 function setImageFetchersIntoOptions(parent, options) {
     const sections = parent.querySelectorAll('.imageFetcher');
     for (const section of sections) {
@@ -605,6 +760,10 @@ function setImageFetchersIntoOptions(parent, options) {
     }
 }
 
+/**
+ * 将图片选项设置保存到选项对象
+ * @param {Object} options - 选项对象
+ */
 function setImageOptionsIntoOptions(options) {
     const originalTypeOptions = currentLibraryOptions?.TypeOptions || [];
     for (const originalTypeOption of originalTypeOptions) {
@@ -620,6 +779,11 @@ function setImageOptionsIntoOptions(options) {
     }
 }
 
+/**
+ * 从界面获取媒体库选项配置
+ * @param {HTMLElement} parent - 父元素
+ * @returns {Object} 媒体库选项对象
+ */
 export function getLibraryOptions(parent) {
     const options = {
         Enabled: parent.querySelector('.chkEnabled').checked,
@@ -679,6 +843,12 @@ export function getLibraryOptions(parent) {
     return options;
 }
 
+/**
+ * 根据配置的顺序对插件列表进行排序
+ * @param {Array} plugins - 插件列表
+ * @param {Array} configuredOrder - 配置的顺序
+ * @returns {Array} 排序后的插件列表
+ */
 function getOrderedPlugins(plugins = [], configuredOrder = []) {
     plugins = plugins.slice(0);
     plugins.sort((a, b) => {
@@ -689,6 +859,11 @@ function getOrderedPlugins(plugins = [], configuredOrder = []) {
     return plugins;
 }
 
+/**
+ * 将媒体库选项设置到界面
+ * @param {HTMLElement} parent - 父元素
+ * @param {Object} options - 媒体库选项对象
+ */
 export function setLibraryOptions(parent, options) {
     currentLibraryOptions = options;
     currentAvailableOptions = parent.availableOptions;
@@ -736,9 +911,12 @@ export function setLibraryOptions(parent, options) {
     renderMediaSegmentProviders(parent, parent.availableOptions, options);
 }
 
+// 当前的媒体库选项配置
 let currentLibraryOptions;
+// 当前可用的选项配置
 let currentAvailableOptions;
 
+// 导出默认对象
 export default {
     embed,
     setContentType,

@@ -29,16 +29,19 @@ let currentContext;
 let metadataEditorInfo;
 let currentItem;
 
+// 当前编辑器是否以“对话框”形式展示。
 function isDialog() {
     return currentContext.classList.contains('dialog');
 }
 
+// 关闭对话框（如果当前就是对话框模式）。
 function closeDialog() {
     if (isDialog()) {
         dialogHelper.close(currentContext);
     }
 }
 
+// 提交更新后的 item 到服务端；若内容类型有变化，则额外更新 ContentType。
 function submitUpdatedItem(form, item) {
     function afterContentTypeUpdated() {
         toast(globalize.translate('MessageItemSaved'));
@@ -87,6 +90,7 @@ function getAlbumArtists(form) {
     });
 }
 
+// 将“以分号分隔的艺术家字符串”转换为后端需要的 ArtistItems 结构。
 function getArtists(form) {
     return form.querySelector('#txtArtist').value.trim().split(';').filter(function (s) {
         return s.length > 0;
@@ -97,6 +101,7 @@ function getArtists(form) {
     });
 }
 
+// 读取日期输入值，并在“日期未变化”时尽量保留原有的时间部分，避免无意义的时间变更。
 function getDateValue(form, element, property) {
     let val = form.querySelector(element).value;
 
@@ -109,7 +114,7 @@ function getDateValue(form, element, property) {
 
         const parts = date.toISOString().split('T');
 
-        // If the date is the same, preserve the time
+        // 如果仅修改了日期输入，但日期本身没变，则保留原 ISO 时间部分
         if (parts[0].startsWith(val)) {
             const iso = parts[1];
 
@@ -121,12 +126,14 @@ function getDateValue(form, element, property) {
 }
 
 function onSubmit(e) {
+    // 提交时展示全局 loading；实际保存与后续 UI 收尾由 submitUpdatedItem 负责。
     loading.show();
 
     const form = this;
 
     const item = {
         Id: currentItem.Id,
+        // 基本信息
         Name: form.querySelector('#txtName').value,
         OriginalTitle: form.querySelector('#txtOriginalName').value,
         ForcedSortName: form.querySelector('#txtSortName').value,
@@ -145,6 +152,7 @@ function onSubmit(e) {
         Status: form.querySelector('#selectStatus').value,
         AirDays: getSelectedAirDays(form),
         AirTime: form.querySelector('#txtAirTime').value,
+        // 列表类字段（Genres/Tags/Studios）从可编辑列表控件读取
         Genres: getListValues(form.querySelector('#listGenres')),
         Tags: getListValues(form.querySelector('#listTags')),
         Studios: getListValues(form.querySelector('#listStudios')).map(function (element) {
@@ -163,6 +171,7 @@ function onSubmit(e) {
         CustomRating: form.querySelector('#selectCustomRating').value,
         People: currentItem.People,
         LockData: form.querySelector('#chkLockData').checked,
+        // UI 中勾选“锁定字段”的语义是：被锁定的字段不允许被元数据刷新覆盖
         LockedFields: Array.prototype.filter.call(form.querySelectorAll('.selectLockedField'), function (c) {
             return !c.checked;
         }).map(function (c) {
@@ -170,6 +179,7 @@ function onSubmit(e) {
         })
     };
 
+    // ProviderIds 先继承旧值，再用当前表单里的 external id 覆盖
     item.ProviderIds = { ...currentItem.ProviderIds };
 
     const idElements = form.querySelectorAll('.txtExternalId');
@@ -182,13 +192,15 @@ function onSubmit(e) {
     item.PreferredMetadataCountryCode = form.querySelector('#selectCountry').value;
 
     if (currentItem.Type === 'Person') {
+        // Person 的出生地在 API 上对应 ProductionLocations（数组）
         const placeOfBirth = form.querySelector('#txtPlaceOfBirth').value;
 
         item.ProductionLocations = placeOfBirth ? [placeOfBirth] : [];
     }
 
     if (currentItem.Type === 'Series') {
-        // 600000000
+        // 系列运行时输入是分钟，后端使用 ticks（1 tick = 100ns）
+        // 600000000 = 60 * 10^7（每分钟 ticks）
         const seriesRuntime = form.querySelector('#txtSeriesRuntime').value;
         item.RunTimeTicks = seriesRuntime ? (seriesRuntime * 600000000) : null;
     }
@@ -201,7 +213,7 @@ function onSubmit(e) {
     e.preventDefault();
     e.stopPropagation();
 
-    // Disable default form submission
+    // 禁用浏览器默认表单提交（由前端自行调用 API 保存）
     return false;
 }
 
@@ -216,6 +228,7 @@ function addElementToList(source, sortCallback) {
         prompt({
             label: 'Value:'
         }).then(function (text) {
+            // 在当前 editableListviewContainer 内找到对应列表，并刷新渲染
             const list = dom.parentWithClass(source, 'editableListviewContainer').querySelector('.paperList');
             const items = getListValues(list);
             items.push(text);
@@ -235,6 +248,7 @@ function editPerson(context, person, index) {
             const isNew = index === -1;
 
             if (isNew) {
+                // 新增人物：追加到 People 数组后统一重绘
                 currentItem.People.push(updatedPerson);
             }
 

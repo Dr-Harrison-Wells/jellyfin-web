@@ -11,11 +11,16 @@ import confirm from '../confirm/confirm';
 import itemHelper from '../itemHelper';
 import datetime from '../../scripts/datetime';
 
+// 多选状态（全局）：
+// - selectedItems: 当前已选中的条目 id 列表（string[]）
+// - selectedElements: 与 selectedItems 对应的 checkbox 元素列表，用于反查所属容器并触发刷新
+// - currentSelectionCommandsPanel: 顶部浮层（关闭/数量/更多）面板实例
 let selectedItems = [];
 let selectedElements = [];
 let currentSelectionCommandsPanel;
 
 function hideSelections() {
+    // 退出多选：移除浮层面板、清空选中缓存、移除每张卡片上的选择面板与样式
     const selectionCommandsPanel = currentSelectionCommandsPanel;
     if (selectionCommandsPanel) {
         selectionCommandsPanel.parentNode.removeChild(selectionCommandsPanel);
@@ -34,6 +39,7 @@ function hideSelections() {
 
 function onItemSelectionPanelClick(e, itemSelectionPanel) {
     // toggle the checkbox, if it wasn't clicked on
+    // 点击选择面板时：如果点击目标不是 checkbox 本身，则手动切换 checkbox 的选中状态
     if (!dom.parentWithClass(e.target, 'chkItemSelect')) {
         const chkItemSelect = itemSelectionPanel.querySelector('.chkItemSelect');
 
@@ -54,6 +60,7 @@ function onItemSelectionPanelClick(e, itemSelectionPanel) {
 }
 
 function updateItemSelection(chkItemSelect, selected) {
+    // 根据 checkbox 的新状态同步 selectedItems/selectedElements
     const id = dom.parentWithAttribute(chkItemSelect, 'data-id').getAttribute('data-id');
 
     if (selected) {
@@ -75,11 +82,13 @@ function updateItemSelection(chkItemSelect, selected) {
     }
 
     if (selectedItems.length) {
+        // 只要还有选中项，就更新顶部浮层里的数量显示
         const itemSelectionCount = document.querySelector('.itemSelectionCount');
         if (itemSelectionCount) {
             itemSelectionCount.innerHTML = datetime.toLocaleString(selectedItems.length);
         }
     } else {
+        // 一个都不选时自动退出多选
         hideSelections();
     }
 }
@@ -89,6 +98,7 @@ function onSelectionChange() {
 }
 
 function showSelection(item, isChecked, addInitialCheck) {
+    // 在单张卡片上创建/显示一个选择面板（checkbox）
     let itemSelectionPanel = item.querySelector('.itemSelectionPanel');
 
     if (!itemSelectionPanel) {
@@ -101,6 +111,7 @@ function showSelection(item, isChecked, addInitialCheck) {
 
         let cssClass = 'chkItemSelect';
         if (isChecked && addInitialCheck) {
+            // checkedInitial 表示“初始默认选中”，用于“全选”时跳过该项以及避免误触取消
             cssClass += ' checkedInitial';
         }
         const checkedAttribute = isChecked ? ' checked' : '';
@@ -111,6 +122,7 @@ function showSelection(item, isChecked, addInitialCheck) {
 }
 
 function showSelectionCommands() {
+    // 创建并显示顶部浮层面板（关闭按钮 + 选中数量 + 更多菜单）
     let selectionCommandsPanel = currentSelectionCommandsPanel;
 
     if (!selectionCommandsPanel) {
@@ -145,6 +157,7 @@ function alertText(options) {
 }
 
 function deleteItems(apiClient, itemIds) {
+    // 删除所选条目：先弹确认，再逐个调用 deleteItem；失败时统一提示
     return new Promise((resolve, reject) => {
         let msg = globalize.translate('ConfirmDeleteItem');
         let title = globalize.translate('HeaderDeleteItem');
@@ -165,10 +178,12 @@ function deleteItems(apiClient, itemIds) {
 }
 
 function showMenuForSelectedItems(e) {
+    // “更多”菜单：根据当前用户权限与所选条目能力动态生成可用操作
     const apiClient = ServerConnections.currentApiClient();
 
     apiClient.getCurrentUser().then(user => {
         // get first selected item to perform metadata refresh permission check
+        // 用第一个选中条目做一次能力/权限判断（例如是否允许刷新元数据），并假设同批条目一致
         apiClient.getItem(apiClient.getCurrentUserId(), selectedItems[0]).then(firstItem => {
             const menuItems = [];
 
@@ -238,12 +253,14 @@ function showMenuForSelectedItems(e) {
                     items: menuItems,
                     positionTo: e.target,
                     callback: function (id) {
+                        // 回调里用副本，避免菜单操作过程中 selectedItems 被其他事件改变
                         const items = selectedItems.slice(0);
                         const serverId = apiClient.serverInfo().Id;
 
                         switch (id) {
                             case 'selectall':
                                 {
+                                    // “全选”：遍历页面上所有选择面板，将可见且未选中的项勾选
                                     const elems = document.querySelectorAll('.itemSelectionPanel');
                                     for (let i = 0, length = elems.length; i < length; i++) {
                                         const chkItemSelect = elems[i].querySelector('.chkItemSelect');
@@ -282,6 +299,7 @@ function showMenuForSelectedItems(e) {
                                 dispatchNeedsRefresh();
                                 break;
                             case 'delete':
+                                // 删除后会触发刷新；这里也会立刻退出多选
                                 deleteItems(apiClient, items).then(dispatchNeedsRefresh);
                                 hideSelections();
                                 dispatchNeedsRefresh();
@@ -290,6 +308,7 @@ function showMenuForSelectedItems(e) {
                                 combineVersions(apiClient, items);
                                 break;
                             case 'markplayed':
+                                // 标记播放/未播放：逐条调用接口
                                 items.forEach(itemId => {
                                     apiClient.markPlayed(apiClient.getCurrentUserId(), itemId);
                                 });
@@ -324,9 +343,11 @@ function showMenuForSelectedItems(e) {
 }
 
 function dispatchNeedsRefresh() {
+    // 让包含这些选中项的 items container 刷新（例如重新拉取列表）
     const elems = [];
 
     [].forEach.call(selectedElements, i => {
+        // checkbox 元素向上找所属的 emby-itemscontainer
         const container = dom.parentWithAttribute(i, 'is', 'emby-itemscontainer');
 
         if (container && !elems.includes(container)) {
@@ -340,6 +361,7 @@ function dispatchNeedsRefresh() {
 }
 
 function combineVersions(apiClient, selection) {
+    // 管理员操作：合并多个视频版本（至少需要选择两项）
     if (selection.length < 2) {
         alert({
             text: globalize.translate('PleaseSelectTwoItems')
@@ -363,6 +385,7 @@ function combineVersions(apiClient, selection) {
 }
 
 function showSelections(initialCard, addInitialCheck) {
+    // 进入多选：为页面上的每张 card 注入 checkbox，并创建顶部浮层
     import('../../elements/emby-checkbox/emby-checkbox').then(() => {
         const cards = document.querySelectorAll('.card');
         for (let i = 0, length = cards.length; i < length; i++) {
@@ -375,6 +398,7 @@ function showSelections(initialCard, addInitialCheck) {
 }
 
 function onContainerClick(e) {
+    // 多选模式下，拦截容器点击：点击卡片时转为切换选中，而不是执行卡片默认导航/打开
     const target = e.target;
 
     if (selectedItems.length) {
@@ -400,6 +424,7 @@ export default function (options) {
     const container = options.container;
 
     function onTapHold(e) {
+        // 长按（或右键/长按事件模拟）进入多选，默认选中当前卡片
         const card = dom.parentWithClass(e.target, 'card');
 
         if (card) {
@@ -415,6 +440,7 @@ export default function (options) {
     }
 
     function getTouches(e) {
+        // 兼容 touch 事件的 touches 读取
         return e.changedTouches || e.targetTouches || e.touches;
     }
 
@@ -423,6 +449,7 @@ export default function (options) {
     let touchStartX;
     let touchStartY;
     function onTouchStart(e) {
+        // 触屏按下：记录起点坐标并启动 550ms 计时器，超时视为“长按”
         const touch = getTouches(e)[0];
         touchTarget = null;
         touchStartX = 0;
@@ -450,6 +477,7 @@ export default function (options) {
     }
 
     function onTouchMove(e) {
+        // 手指移动超过阈值（5px）则取消长按识别，避免滚动时误触
         if (touchTarget) {
             const touch = getTouches(e)[0];
             let deltaX;
@@ -475,6 +503,7 @@ export default function (options) {
     }
 
     function onMouseDown(e) {
+        // 鼠标按下同样用 550ms 定时器模拟“长按”
         if (touchStartTimeout) {
             clearTimeout(touchStartTimeout);
             touchStartTimeout = null;
@@ -485,6 +514,7 @@ export default function (options) {
     }
 
     function onMouseOut() {
+        // 鼠标移出/抬起/触摸结束：取消长按识别
         if (touchStartTimeout) {
             clearTimeout(touchStartTimeout);
             touchStartTimeout = null;
@@ -493,6 +523,7 @@ export default function (options) {
     }
 
     function onTouchStartTimerFired() {
+        // 计时器触发：若目标仍存在且在 card 内，则进入多选
         if (!touchTarget) {
             return;
         }
@@ -507,6 +538,7 @@ export default function (options) {
 
     function initTapHold(element) {
         // mobile safari doesn't allow contextmenu override
+        // iOS Safari 不允许覆盖 contextmenu，这里根据环境切换不同的长按/右键实现
         if (browser.touch && !browser.safari) {
             element.addEventListener('contextmenu', onTapHold);
         } else {

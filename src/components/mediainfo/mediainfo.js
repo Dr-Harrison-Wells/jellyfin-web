@@ -1,3 +1,8 @@
+/**
+ * 媒体信息组件
+ * 用于显示媒体项的各种信息，包括评分、时长、年份等
+ */
+
 import escapeHtml from 'escape-html';
 import datetime from '../../scripts/datetime';
 import globalize from '../../lib/globalize';
@@ -10,6 +15,11 @@ import '../guide/programs.scss';
 import '../../elements/emby-button/emby-button';
 import * as userSettings from '../../scripts/settings/userSettings';
 
+/**
+ * 获取定时器指示器图标
+ * @param {Object} item - 媒体项对象
+ * @returns {string} HTML 字符串形式的定时器图标
+ */
 function getTimerIndicator(item) {
     let status;
 
@@ -34,6 +44,12 @@ function getTimerIndicator(item) {
     return '<span class="material-icons mediaInfoItem mediaInfoIconItem mediaInfoTimerIcon fiber_manual_record" aria-hidden="true"></span>';
 }
 
+/**
+ * 获取电视节目信息的 HTML
+ * @param {Object} item - 节目项对象
+ * @param {Object} options - 显示选项
+ * @returns {string} HTML 字符串
+ */
 function getProgramInfoHtml(item, options) {
     let html = '';
 
@@ -41,6 +57,7 @@ function getProgramInfoHtml(item, options) {
     let text;
     let date;
 
+    // 显示节目开始和结束时间
     if (item.StartDate && options.programTime !== false) {
         try {
             text = '';
@@ -64,10 +81,12 @@ function getProgramInfoHtml(item, options) {
         }
     }
 
+    // 显示频道号
     if (item.ChannelNumber) {
         miscInfo.push(`CH ${item.ChannelNumber}`);
     }
 
+    // 显示频道名称
     if (item.ChannelName) {
         if (options.interactive && item.ChannelId) {
             miscInfo.push({
@@ -85,6 +104,7 @@ function getProgramInfoHtml(item, options) {
         }
     }
 
+    // 显示定时器指示器
     if (options.timerIndicator !== false) {
         const timerHtml = getTimerIndicator(item);
         if (timerHtml) {
@@ -101,6 +121,12 @@ function getProgramInfoHtml(item, options) {
     return html;
 }
 
+/**
+ * 获取媒体信息的 HTML
+ * @param {Object} item - 媒体项对象
+ * @param {Object} options - 显示选项配置
+ * @returns {string} HTML 字符串
+ */
 export function getMediaInfoHtml(item, options = {}) {
     let html = '';
 
@@ -109,6 +135,7 @@ export function getMediaInfoHtml(item, options = {}) {
     let date;
     let count;
 
+    // 判断是否显示文件夹运行时长（适用于音乐专辑、播放列表等）
     const showFolderRuntime = item.Type === 'MusicAlbum' || item.MediaType === 'MusicArtist' || item.Type === 'Playlist' || item.MediaType === 'Playlist' || item.MediaType === 'MusicGenre';
 
     if (showFolderRuntime) {
@@ -129,11 +156,13 @@ export function getMediaInfoHtml(item, options = {}) {
         }
     }
 
+    // 显示原始播出日期（适用于剧集和照片）
     if ((item.Type === 'Episode' || item.MediaType === 'Photo')
             && options.originalAirDate !== false
             && item.PremiereDate
     ) {
         try {
+            // 如果是剧集，不要将日期转换为本地时区，因为只存储日期（不包含时间）
             //don't modify date to locale if episode. Only Dates (not times) are stored, or editable in the edit metadata dialog
             date = datetime.parseISO8601Date(item.PremiereDate, item.Type !== 'Episode');
 
@@ -144,6 +173,7 @@ export function getMediaInfoHtml(item, options = {}) {
         }
     }
 
+    // 系列定时器的录制信息
     if (item.Type === 'SeriesTimer') {
         if (item.RecordAnyTime) {
             miscInfo.push(globalize.translate('Anytime'));
@@ -174,8 +204,10 @@ export function getMediaInfoHtml(item, options = {}) {
         }
     }
 
+    // 显示系列的年份范围
     if (options.year !== false && item.ProductionYear && item.Type === 'Series') {
         if (item.Status === 'Continuing') {
+            // 系列仍在继续
             miscInfo.push(globalize.translate('SeriesYearToPresent', datetime.toLocaleString(item.ProductionYear, { useGrouping: false })));
         } else if (item.ProductionYear) {
             text = datetime.toLocaleString(item.ProductionYear, { useGrouping: false });
@@ -202,6 +234,7 @@ export function getMediaInfoHtml(item, options = {}) {
             program = item.ProgramInfo;
         }
 
+        // 显示节目指示器（直播、首映、新剧集、重播）
         if (options.programIndicator !== false) {
             if (program.IsLive && userSettings.get('guide-indicator-live') === 'true') {
                 miscInfo.push({
@@ -260,6 +293,7 @@ export function getMediaInfoHtml(item, options = {}) {
         }
     }
 
+    // 显示运行时长
     if (item.RunTimeTicks && item.Type !== 'Series' && item.Type !== 'Program' && item.Type !== 'Timer' && item.Type !== 'Book' && !showFolderRuntime && options.runtime !== false) {
         if (item.Type === 'Audio') {
             miscInfo.push(datetime.getDisplayRunningTime(item.RunTimeTicks));
@@ -268,6 +302,7 @@ export function getMediaInfoHtml(item, options = {}) {
         }
     }
 
+    // 显示官方评级
     if (options.officialRating !== false && item.OfficialRating && item.Type !== 'Season' && item.Type !== 'Episode') {
         miscInfo.push({
             text: item.OfficialRating,
@@ -275,6 +310,7 @@ export function getMediaInfoHtml(item, options = {}) {
         });
     }
 
+    // 显示 3D 格式标识
     if (item.Video3DFormat) {
         miscInfo.push('3D');
     }
@@ -291,14 +327,17 @@ export function getMediaInfoHtml(item, options = {}) {
         return getMediaInfoItem(m);
     }).join('');
 
+    // 显示星级评分
     if (options.starRating !== false) {
         html += getStarIconsHtml(item);
     }
 
+    // 显示字幕标识
     if (item.HasSubtitles && options.subtitles !== false) {
         html += '<div class="mediaInfoItem mediaInfoText closedCaptionMediaInfoText">CC</div>';
     }
 
+    // 显示评论家评分（根据分数显示不同样式）
     if (item.CriticRating && options.criticRating !== false) {
         if (item.CriticRating >= 60) {
             html += `<div class="mediaInfoItem mediaInfoCriticRating mediaInfoCriticRatingFresh">${item.CriticRating}</div>`;
@@ -319,6 +358,11 @@ export function getMediaInfoHtml(item, options = {}) {
     return html;
 }
 
+/**
+ * 获取媒体结束时间
+ * @param {Object} item - 媒体项对象
+ * @returns {string|null} 格式化的结束时间文本
+ */
 export function getEndsAt(item) {
     if (item.MediaType === 'Video' && item.RunTimeTicks && !item.StartDate) {
         let endDate = new Date().getTime() + (item.RunTimeTicks / 10000);
@@ -331,6 +375,14 @@ export function getEndsAt(item) {
     return null;
 }
 
+/**
+ * 根据当前播放位置计算结束时间
+ * @param {number} runtimeTicks - 总运行时长（ticks）
+ * @param {number} positionTicks - 当前播放位置（ticks）
+ * @param {number} playbackRate - 播放速率
+ * @param {boolean} includeText - 是否包含文本前缀
+ * @returns {string} 格式化的结束时间
+ */
 export function getEndsAtFromPosition(runtimeTicks, positionTicks, playbackRate, includeText) {
     let endDate = new Date().getTime() + (1 / playbackRate) * ((runtimeTicks - (positionTicks || 0)) / 10000);
     endDate = new Date(endDate);
@@ -343,6 +395,12 @@ export function getEndsAtFromPosition(runtimeTicks, positionTicks, playbackRate,
     return globalize.translate('EndsAtValue', displayTime);
 }
 
+/**
+ * 创建单个媒体信息项的 HTML
+ * @param {string|Object} m - 媒体信息文本或对象
+ * @param {string} cssClass - CSS 类名
+ * @returns {string} HTML 字符串
+ */
 function getMediaInfoItem(m, cssClass) {
     cssClass = cssClass ? (`${cssClass} mediaInfoItem`) : 'mediaInfoItem';
     let mediaInfoText = m;
@@ -357,6 +415,11 @@ function getMediaInfoItem(m, cssClass) {
     return `<div class="${cssClass}">${mediaInfoText}</div>`;
 }
 
+/**
+ * 获取星级评分的 HTML
+ * @param {Object} item - 媒体项对象
+ * @returns {string} HTML 字符串
+ */
 function getStarIconsHtml(item) {
     let html = '';
 
@@ -371,6 +434,11 @@ function getStarIconsHtml(item) {
     return html;
 }
 
+/**
+ * 动态更新结束时间显示
+ * @param {HTMLElement} elem - 要更新的元素
+ * @param {Object} item - 媒体项对象
+ */
 function dynamicEndTime(elem, item) {
     const interval = setInterval(() => {
         if (!document.body.contains(elem)) {
@@ -379,9 +447,15 @@ function dynamicEndTime(elem, item) {
         }
 
         elem.innerHTML = getEndsAt(item);
-    }, 60000);
+    }, 60000); // 每分钟更新一次
 }
 
+/**
+ * 填充主要媒体信息到元素
+ * @param {HTMLElement} elem - 目标元素
+ * @param {Object} item - 媒体项对象
+ * @param {Object} options - 显示选项
+ */
 export function fillPrimaryMediaInfo(elem, item, options) {
     const html = getPrimaryMediaInfoHtml(item, options);
 
@@ -389,6 +463,12 @@ export function fillPrimaryMediaInfo(elem, item, options) {
     afterFill(elem, item, options);
 }
 
+/**
+ * 填充次要媒体信息到元素
+ * @param {HTMLElement} elem - 目标元素
+ * @param {Object} item - 媒体项对象
+ * @param {Object} options - 显示选项
+ */
 export function fillSecondaryMediaInfo(elem, item, options) {
     const html = getSecondaryMediaInfoHtml(item, options);
 
@@ -396,6 +476,12 @@ export function fillSecondaryMediaInfo(elem, item, options) {
     afterFill(elem, item, options);
 }
 
+/**
+ * 填充完成后的处理函数
+ * @param {HTMLElement} elem - 目标元素
+ * @param {Object} item - 媒体项对象
+ * @param {Object} options - 显示选项
+ */
 function afterFill(elem, item, options) {
     if (options.endsAt !== false) {
         const endsAtElem = elem.querySelector('.endsAt');
@@ -410,6 +496,10 @@ function afterFill(elem, item, options) {
     }
 }
 
+/**
+ * 处理频道链接点击事件
+ * @param {Event} e - 点击事件对象
+ */
 function onChannelLinkClick(e) {
     const channelId = this.getAttribute('data-id');
     const serverId = this.getAttribute('data-serverid');
@@ -420,6 +510,12 @@ function onChannelLinkClick(e) {
     return false;
 }
 
+/**
+ * 获取主要媒体信息的 HTML
+ * @param {Object} item - 媒体项对象
+ * @param {Object} options - 显示选项（默认为非交互式）
+ * @returns {string} HTML 字符串
+ */
 export function getPrimaryMediaInfoHtml(item, options = {}) {
     if (options.interactive === undefined) {
         options.interactive = false;
@@ -428,6 +524,12 @@ export function getPrimaryMediaInfoHtml(item, options = {}) {
     return getMediaInfoHtml(item, options);
 }
 
+/**
+ * 获取次要媒体信息的 HTML
+ * @param {Object} item - 媒体项对象
+ * @param {Object} options - 显示选项
+ * @returns {string} HTML 字符串
+ */
 export function getSecondaryMediaInfoHtml(item, options) {
     options = options || {};
     if (options.interactive == null) {
@@ -440,6 +542,11 @@ export function getSecondaryMediaInfoHtml(item, options) {
     return '';
 }
 
+/**
+ * 根据视频宽高获取分辨率文本
+ * @param {Object} i - 包含 Width、Height 和 IsInterlaced 属性的对象
+ * @returns {string|null} 分辨率文本（如 '1080p', '720i' 等）
+ */
 export function getResolutionText(i) {
     const width = i.Width;
     const height = i.Height;
@@ -476,6 +583,11 @@ export function getResolutionText(i) {
     return null;
 }
 
+/**
+ * 获取用于显示的音频流
+ * @param {Object} item - 媒体项对象
+ * @returns {Object|null} 音频流对象
+ */
 function getAudioStreamForDisplay(item) {
     if (!item.MediaSources) {
         return null;
@@ -491,6 +603,11 @@ function getAudioStreamForDisplay(item) {
     })[0];
 }
 
+/**
+ * 获取媒体统计信息
+ * @param {Object} item - 媒体项对象
+ * @returns {Array} 媒体统计信息数组
+ */
 export function getMediaInfoStats(item) {
     const list = [];
 
@@ -530,6 +647,7 @@ export function getMediaInfoStats(item) {
         });
     }
 
+    // 根据音频声道数确定声道文本
     const channels = audioStream.Channels;
     let channelText;
 
@@ -564,6 +682,7 @@ export function getMediaInfoStats(item) {
         });
     }
 
+    // 显示添加日期
     if (item.DateCreated && itemHelper.enableDateAddedDisplay(item)) {
         const dateCreated = datetime.parseISO8601Date(item.DateCreated);
 
@@ -576,6 +695,9 @@ export function getMediaInfoStats(item) {
     return list;
 }
 
+/**
+ * 导出媒体信息相关的函数集合
+ */
 export default {
     getMediaInfoHtml: getPrimaryMediaInfoHtml,
     getEndsAt: getEndsAt,

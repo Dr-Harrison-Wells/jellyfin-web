@@ -1,3 +1,8 @@
+/**
+ * 媒体信息统计 Hook
+ * 用于获取和格式化媒体项的各种信息（分辨率、编解码器、音频通道等）
+ */
+
 import { MediaStreamType } from '@jellyfin/sdk/lib/generated-client/models/media-stream-type';
 import { VideoType } from '@jellyfin/sdk/lib/generated-client/models/video-type';
 import type { MediaStream } from '@jellyfin/sdk/lib/generated-client/models/media-stream';
@@ -10,9 +15,21 @@ import type { MiscInfo } from 'types/mediaInfoItem';
 import type { NullableString } from 'types/base/common/shared/types';
 import type { MediaInfoStatsOpts } from './type';
 
+/**
+ * 获取分辨率标签
+ * @param label - 分辨率标签（如 '1080p'）
+ * @param isInterlaced - 是否为隔行扫描
+ * @returns 格式化的分辨率标签（隔行扫描时添加 'i' 后缀）
+ */
 const getResolution = (label: string, isInterlaced?: boolean) =>
     isInterlaced ? `${label}i` : label;
 
+/**
+ * 根据视频流的宽度和高度获取分辨率文本
+ * @param showResolutionInfo - 是否显示分辨率信息
+ * @param stream - 媒体流对象
+ * @returns 分辨率文本（如 '4K'、'1080p'、'720p' 等）或 null
+ */
 const getResolutionText = (
     showResolutionInfo: boolean,
     stream: MediaStream
@@ -39,6 +56,12 @@ const getResolutionText = (
     return null;
 };
 
+/**
+ * 根据音频通道数获取音频通道文本
+ * @param showAudoChannelInfo - 是否显示音频通道信息
+ * @param stream - 媒体流对象
+ * @returns 音频通道文本（如 '7.1'、'5.1'、'2.0' 等）或 null
+ */
 const getAudoChannelText = (
     showAudoChannelInfo: boolean,
     stream: MediaStream
@@ -63,6 +86,12 @@ const getAudoChannelText = (
     return null;
 };
 
+/**
+ * 获取用于显示的音频流
+ * 返回默认音频流或第一个音频流
+ * @param item - 媒体项对象
+ * @returns 音频流对象
+ */
 function getAudioStreamForDisplay(item: ItemDto) {
     const mediaSource = (item.MediaSources || [])[0] || {};
 
@@ -77,6 +106,12 @@ function getAudioStreamForDisplay(item: ItemDto) {
     );
 }
 
+/**
+ * 获取用于显示的视频流
+ * 返回第一个视频流
+ * @param item - 媒体项对象
+ * @returns 视频流对象
+ */
 function getVideoStreamForDisplay(item: ItemDto) {
     const mediaSource = (item.MediaSources || [])[0] || {};
 
@@ -87,6 +122,12 @@ function getVideoStreamForDisplay(item: ItemDto) {
     );
 }
 
+/**
+ * 添加视频类型信息（如 DVD、蓝光）
+ * @param showVideoTypeInfo - 是否显示视频类型信息
+ * @param itemVideoType - 视频类型
+ * @param addMiscInfo - 添加杂项信息的回调函数
+ */
 function addVideoType(
     showVideoTypeInfo: boolean,
     itemVideoType: VideoType | undefined,
@@ -103,6 +144,12 @@ function addVideoType(
     }
 }
 
+/**
+ * 添加分辨率信息
+ * @param showResolutionInfo - 是否显示分辨率信息
+ * @param videoStream - 视频流对象
+ * @param addMiscInfo - 添加杂项信息的回调函数
+ */
 function addResolution(
     showResolutionInfo: boolean,
     videoStream: MediaStream,
@@ -115,6 +162,12 @@ function addResolution(
     }
 }
 
+/**
+ * 添加视频编解码器信息
+ * @param showVideoCodecInfo - 是否显示视频编解码器信息
+ * @param videoStreamCodec - 视频流编解码器
+ * @param addMiscInfo - 添加杂项信息的回调函数
+ */
 function addVideoStreamCodec(
     showVideoCodecInfo: boolean,
     videoStreamCodec: NullableString,
@@ -125,6 +178,12 @@ function addVideoStreamCodec(
     }
 }
 
+/**
+ * 添加音频通道信息
+ * @param showAudoChannelInfo - 是否显示音频通道信息
+ * @param audioStream - 音频流对象
+ * @param addMiscInfo - 添加杂项信息的回调函数
+ */
 function addAudoChannel(
     showAudoChannelInfo: boolean,
     audioStream: MediaStream,
@@ -140,6 +199,13 @@ function addAudoChannel(
     }
 }
 
+/**
+ * 添加音频编解码器信息
+ * 对于 DCA/DTS 编解码器，优先显示配置文件（Profile）
+ * @param showAudioStreamCodecInfo - 是否显示音频编解码器信息
+ * @param audioStream - 音频流对象
+ * @param addMiscInfo - 添加杂项信息的回调函数
+ */
 function addAudioStreamCodec(
     showAudioStreamCodecInfo: boolean,
     audioStream: MediaStream,
@@ -159,6 +225,13 @@ function addAudioStreamCodec(
     }
 }
 
+/**
+ * 添加添加日期信息
+ * 显示项目添加到媒体库的日期和时间
+ * @param showDateAddedInfo - 是否显示添加日期信息
+ * @param item - 媒体项对象
+ * @param addMiscInfo - 添加杂项信息的回调函数
+ */
 function addDateAdded(
     showDateAddedInfo: boolean,
     item: ItemDto,
@@ -182,10 +255,20 @@ function addDateAdded(
     }
 }
 
+/**
+ * useMediaInfoStats Hook 的属性接口
+ */
 interface UseMediaInfoStatsProps extends MediaInfoStatsOpts {
+    /** 媒体项对象 */
     item: ItemDto;
 }
 
+/**
+ * 媒体信息统计 Hook
+ * 收集并返回媒体项的各种信息（分辨率、编解码器、音频通道、添加日期等）
+ * @param props - Hook 属性
+ * @returns 杂项信息数组
+ */
 function useMediaInfoStats({
     item,
     showVideoTypeInfo = false,
@@ -195,32 +278,42 @@ function useMediaInfoStats({
     showAudioStreamCodecInfo = false,
     showDateAddedInfo = false
 }: UseMediaInfoStatsProps) {
+    // 存储所有杂项信息的数组
     const miscInfo: MiscInfo[] = [];
 
+    // 添加杂项信息的辅助函数
     const addMiscInfo = (val: MiscInfo) => {
         if (val) {
             miscInfo.push(val);
         }
     };
 
+    // 获取用于显示的视频流
     const videoStream = getVideoStreamForDisplay(item);
 
+    // 获取用于显示的音频流
     const audioStream = getAudioStreamForDisplay(item);
 
+    // 添加视频类型信息（DVD、蓝光等）
     addVideoType(showVideoTypeInfo, item.VideoType, addMiscInfo);
 
+    // 添加分辨率信息
     addResolution(showResolutionInfo, videoStream, addMiscInfo);
 
+    // 添加视频编解码器信息
     addVideoStreamCodec(
         showVideoStreamCodecInfo,
         videoStream.Codec,
         addMiscInfo
     );
 
+    // 添加音频通道信息
     addAudoChannel(showAudoChannelInfo, audioStream, addMiscInfo);
 
+    // 添加音频编解码器信息
     addAudioStreamCodec(showAudioStreamCodecInfo, audioStream, addMiscInfo);
 
+    // 添加添加日期信息
     addDateAdded(showDateAddedInfo, item, addMiscInfo);
 
     return miscInfo;

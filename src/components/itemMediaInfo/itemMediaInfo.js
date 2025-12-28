@@ -1,6 +1,7 @@
 
 /**
  * Module for display media info.
+ * 用于显示媒体信息的模块
  * @module components/itemMediaInfo/itemMediaInfo
  */
 
@@ -29,12 +30,20 @@ import 'styles/flexstyles.scss';
 import template from './itemMediaInfo.template.html';
 
 // Do not add extra spaces between tags - they will be copied into the result
+// 标签之间不要添加额外的空格 - 它们会被复制到结果中
 const copyButtonHtml = layoutManager.tv ? '' :
     `<button is="paper-icon-button-light" class="btnCopy" title="${globalize.translate('Copy')}" aria-label="${globalize.translate('Copy')}"
         ><span class="material-icons content_copy" aria-hidden="true"></span></button>`;
 const attributeDelimiterHtml = layoutManager.tv ? '' : '<span class="hide">: </span>';
 
+/**
+ * 设置媒体信息到页面
+ * @param {Object} user - 用户对象
+ * @param {HTMLElement} page - 页面元素
+ * @param {Object} item - 媒体项对象
+ */
 function setMediaInfo(user, page, item) {
+    // 遍历所有媒体源，生成HTML并用分隔线连接
     let html = item.MediaSources.map(version => {
         return getMediaSourceHtml(user, item, version);
     }).join('<div style="border-top:1px solid #444;margin: 1em 0;"></div>');
@@ -44,10 +53,13 @@ function setMediaInfo(user, page, item) {
     const mediaInfoContent = page.querySelector('#mediaInfoContent');
     mediaInfoContent.innerHTML = html;
 
+    // 为所有复制按钮添加点击事件监听器
     for (const btn of mediaInfoContent.querySelectorAll('.btnCopy')) {
         btn.addEventListener('click', () => {
+            // 找到需要复制的信息块（流信息、源信息或整个内容）
             const infoBlock = dom.parentWithClass(btn, 'mediaInfoStream') || dom.parentWithClass(btn, 'mediaInfoSource') || mediaInfoContent;
 
+            // 复制文本内容到剪贴板
             copy(infoBlock.textContent).then(() => {
                 toast(globalize.translate('Copied'));
             }).catch(() => {
@@ -58,6 +70,13 @@ function setMediaInfo(user, page, item) {
     }
 }
 
+/**
+ * 生成媒体源的HTML内容
+ * @param {Object} user - 用户对象
+ * @param {Object} item - 媒体项对象
+ * @param {Object} version - 媒体源版本对象
+ * @returns {string} 生成的HTML字符串
+ */
 function getMediaSourceHtml(user, item, version) {
     let html = '<div class="mediaInfoSource">';
     if (version.Name) {
@@ -76,14 +95,18 @@ function getMediaSourceHtml(user, item, version) {
         const size = getReadableSize(version.Size);
         html += `${createAttribute(globalize.translate('MediaInfoSize'), size)}<br/>`;
     }
+    // 对媒体流进行排序
     version.MediaStreams.sort(itemHelper.sortTracks);
+    // 遍历所有媒体流
     for (const stream of version.MediaStreams) {
+        // 跳过数据类型的流
         if (stream.Type === 'Data') {
             continue;
         }
 
         html += '<div class="mediaInfoStream">';
         let translateString;
+        // 根据流类型确定翻译字符串
         switch (stream.Type) {
             case 'Audio':
             case 'Data':
@@ -99,6 +122,7 @@ function getMediaSourceHtml(user, item, version) {
 
         const displayType = globalize.translate(translateString);
         html += `\n<h2 class="mediaInfoStreamType">${displayType}${copyButtonHtml}</h2>\n`;
+        // 收集流的所有属性
         const attributes = [];
         if (stream.DisplayTitle) {
             attributes.push(createAttribute(globalize.translate('MediaInfoTitle'), stream.DisplayTitle));
@@ -220,22 +244,39 @@ function getMediaSourceHtml(user, item, version) {
     return html;
 }
 
-// File Paths should be always ltr. The isLtr parameter allows this.
+/**
+ * 创建属性HTML元素
+ * 文件路径应始终为从左到右（LTR）。isLtr 参数允许这样做。
+ * @param {string} label - 属性标签
+ * @param {string} value - 属性值
+ * @param {boolean} isLtr - 是否强制从左到右显示
+ * @returns {string} 属性的HTML字符串
+ */
 function createAttribute(label, value, isLtr) {
     return `<span class="mediaInfoLabel">${label}</span>${attributeDelimiterHtml}<span class="mediaInfoAttribute" ${isLtr && 'dir="ltr"'}>${escapeHtml(value)}</span>\n`;
 }
 
+/**
+ * 加载并显示媒体信息
+ * @param {string} itemId - 媒体项ID
+ * @param {string} serverId - 服务器ID
+ * @returns {Promise} 加载完成的Promise
+ */
 function loadMediaInfo(itemId, serverId) {
     const apiClient = ServerConnections.getApiClient(serverId);
+    // 获取媒体项信息
     return apiClient.getItem(apiClient.getCurrentUserId(), itemId).then(item => {
+        // 配置对话框选项
         const dialogOptions = {
             size: 'small',
             removeOnClose: true,
             scrollY: false
         };
+        // TV模式下使用全屏对话框
         if (layoutManager.tv) {
             dialogOptions.size = 'fullscreen';
         }
+        // 创建对话框
         const dlg = dialogHelper.createDialog(dialogOptions);
         dlg.classList.add('formDialog');
         let html = '';
@@ -245,9 +286,11 @@ function loadMediaInfo(itemId, serverId) {
             dlg.querySelector('.formDialogContent');
         }
         dialogHelper.open(dlg);
+        // 为取消按钮添加事件监听器
         dlg.querySelector('.btnCancel').addEventListener('click', () => {
             dialogHelper.close(dlg);
         });
+        // 获取当前用户并设置媒体信息
         apiClient.getCurrentUser().then(user => {
             setMediaInfo(user, dlg, item);
         });
@@ -255,11 +298,19 @@ function loadMediaInfo(itemId, serverId) {
     });
 }
 
+/**
+ * 显示媒体信息对话框（导出函数）
+ * @param {string} itemId - 媒体项ID
+ * @param {string} serverId - 服务器ID
+ * @returns {Promise} 返回加载媒体信息的Promise
+ */
 export function show(itemId, serverId) {
+    // 显示加载动画
     loading.show();
     return loadMediaInfo(itemId, serverId);
 }
 
+// 默认导出对象
 export default {
     show: show
 };

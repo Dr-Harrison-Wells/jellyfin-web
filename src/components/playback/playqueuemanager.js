@@ -2,6 +2,8 @@ import { randomInt } from '../../utils/number.ts';
 
 let currentId = 0;
 function addUniquePlaylistItemId(item) {
+    // 为队列中的每个条目补齐一个稳定的唯一标识。
+    // 说明：部分来源的数据可能没有 PlaylistItemId；这里用递增计数生成。
     if (!item.PlaylistItemId) {
         item.PlaylistItemId = 'playlistItem' + currentId;
         currentId++;
@@ -9,6 +11,8 @@ function addUniquePlaylistItemId(item) {
 }
 
 function findPlaylistIndex(playlistItemId, list) {
+    // 在指定列表里查找对应 PlaylistItemId 的索引。
+    // 找不到则返回 -1（与 Array#indexOf 语义一致）。
     for (let i = 0, length = list.length; i < length; i++) {
         if (list[i].PlaylistItemId === playlistItemId) {
             return i;
@@ -20,17 +24,30 @@ function findPlaylistIndex(playlistItemId, list) {
 
 class PlayQueueManager {
     constructor() {
+        // _playlist: 当前“生效”的播放队列（可能是已打乱后的顺序）。
+        // _sortedPlaylist: 用于“从随机切回排序”时的备份。
         this._sortedPlaylist = [];
         this._playlist = [];
+
+        // Repeat 模式：
+        // - RepeatNone: 播完到头就停
+        // - RepeatAll: 到末尾后回到 0
+        // - RepeatOne: 永远停留在当前项
         this._repeatMode = 'RepeatNone';
+
+        // Shuffle 模式：
+        // - Sorted: 按当前顺序播放
+        // - Shuffle: 打乱（并把当前项固定在队首）
         this._shuffleMode = 'Sorted';
     }
 
     getPlaylist() {
+        // 返回队列的浅拷贝，避免外部直接修改内部数组。
         return this._playlist.slice(0);
     }
 
     setPlaylist(items) {
+        // 直接替换整个播放队列；会重置当前项与 Repeat 模式。
         items = items.slice(0);
 
         for (let i = 0, length = items.length; i < length; i++) {
@@ -43,6 +60,7 @@ class PlayQueueManager {
     }
 
     queue(items) {
+        // 追加到队列末尾（保持现有顺序）。
         for (let i = 0, length = items.length; i < length; i++) {
             addUniquePlaylistItemId(items[i]);
 
@@ -51,6 +69,9 @@ class PlayQueueManager {
     }
 
     shufflePlaylist() {
+        // 将当前队列打乱。
+        // 关键点：会把“当前播放项”先从队列中取出，打乱剩余项后再放回队首，
+        // 从而保证切换随机时不会立即跳到其它条目。
         this._sortedPlaylist = [];
         for (const item of this._playlist) {
             this._sortedPlaylist.push(item);
@@ -68,6 +89,8 @@ class PlayQueueManager {
     }
 
     sortShuffledPlaylist() {
+        // 从随机播放切回“原始排序”。
+        // 说明：_sortedPlaylist 只在 shufflePlaylist() 时保存一份快照。
         this._playlist = [];
         for (const item of this._sortedPlaylist) {
             this._playlist.push(item);
@@ -77,6 +100,8 @@ class PlayQueueManager {
     }
 
     clearPlaylist(clearCurrentItem = false) {
+        // 清空队列。
+        // 默认会保留当前项（避免播放中清空导致无法继续引用当前项）。
         const currentPlaylistItem = this._playlist.splice(this.getCurrentPlaylistIndex(), 1)[0];
         this._playlist = [];
         if (!clearCurrentItem) {
@@ -85,6 +110,8 @@ class PlayQueueManager {
     }
 
     queueNext(items) {
+        // 将 items 插入到“当前项之后”的位置（即作为下一首播放）。
+        // 若当前项不存在，则等价于插入到队列末尾。
         for (let i = 0, length = items.length; i < length; i++) {
             addUniquePlaylistItemId(items[i]);
         }
@@ -101,10 +128,12 @@ class PlayQueueManager {
     }
 
     getCurrentPlaylistIndex() {
+        // 当前项在队列中的位置（取决于当前 _playlist 的顺序：排序/随机）。
         return findPlaylistIndex(this.getCurrentPlaylistItemId(), this._playlist);
     }
 
     getCurrentItem() {
+        // 获取当前播放项；如果当前 id 无效则返回 null。
         const index = findPlaylistIndex(this.getCurrentPlaylistItemId(), this._playlist);
 
         return index === -1 ? null : this._playlist[index];
@@ -115,10 +144,12 @@ class PlayQueueManager {
     }
 
     setPlaylistState(playlistItemId) {
+        // 仅设置“当前项指针”（用 PlaylistItemId 表示）。
         this._currentPlaylistItemId = playlistItemId;
     }
 
     setPlaylistIndex(playlistIndex) {
+        // 通过索引设置当前项；传入负数表示清空当前项。
         if (playlistIndex < 0) {
             this.setPlaylistState(null);
         } else {
@@ -127,6 +158,8 @@ class PlayQueueManager {
     }
 
     removeFromPlaylist(playlistItemIds) {
+        // 从队列中移除指定的 PlaylistItemId 列表。
+        // 同时也会从 _sortedPlaylist 里移除，保证随机/排序切换后也不会“复活”。
         if (this._playlist.length <= playlistItemIds.length) {
             return {
                 result: 'empty'
@@ -151,6 +184,8 @@ class PlayQueueManager {
     }
 
     movePlaylistItem(playlistItemId, newIndex) {
+        // 将队列中的某一项移动到新位置。
+        // 注意：这里对 playlist 做的是拷贝后再写回，避免原地操作导致外部持有引用时出现意外。
         const playlist = this.getPlaylist();
 
         let oldIndex;
@@ -183,6 +218,7 @@ class PlayQueueManager {
     }
 
     reset() {
+        // 重置为初始状态（清空队列、当前项、Repeat/Shuffle）。
         this._sortedPlaylist = [];
         this._playlist = [];
         this._currentPlaylistItemId = null;
@@ -191,6 +227,7 @@ class PlayQueueManager {
     }
 
     setRepeatMode(value) {
+        // 设置循环模式；仅允许固定枚举值。
         const repeatModes = ['RepeatOne', 'RepeatAll', 'RepeatNone'];
         if (repeatModes.includes(value)) {
             this._repeatMode = value;
@@ -204,6 +241,8 @@ class PlayQueueManager {
     }
 
     setShuffleMode(value) {
+        // 设置随机/排序模式。
+        // 这里不是简单写字段，而是会实际重排 _playlist。
         switch (value) {
             case 'Shuffle':
                 this.shufflePlaylist();
@@ -217,6 +256,7 @@ class PlayQueueManager {
     }
 
     toggleShuffleMode() {
+        // 在 Shuffle / Sorted 之间切换。
         switch (this._shuffleMode) {
             case 'Shuffle':
                 this.setShuffleMode('Sorted');
@@ -234,6 +274,8 @@ class PlayQueueManager {
     }
 
     getNextItemInfo() {
+        // 根据 Repeat 模式计算“下一项”的信息。
+        // 返回 { item, index } 或 null（到头且不循环时）。
         let newIndex;
         const playlist = this.getPlaylist();
         const playlistLength = playlist.length;
@@ -272,10 +314,10 @@ class PlayQueueManager {
 
 function arrayInsertAt(destArray, pos, arrayToInsert) {
     let args = [];
-    args.push(pos); // where to insert
-    args.push(0); // nothing to remove
-    args = args.concat(arrayToInsert); // add on array to insert
-    destArray.splice.apply(destArray, args); // splice it in
+    args.push(pos); // 插入位置
+    args.push(0); // 不删除任何元素
+    args = args.concat(arrayToInsert); // 需要插入的数组
+    destArray.splice.apply(destArray, args); // 通过 splice 执行插入
 }
 
 function moveInArray(array, from, to) {
